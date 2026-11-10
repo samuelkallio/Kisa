@@ -70,7 +70,6 @@
   <h1>🎾 Padel 3 Erää</h1>
   <p class="sub">Voitto-osuus → piste-eron keskiarvo → painotetut erät</p>
 
-  <!-- NÄKYMÄ: JÄRJESTÄJÄN ALUSTUS -->
   <div id="view-setup" class="card">
     <h2>Järjestäjän alustus</h2>
     <label>Pelaajien nimet (yksi per rivi, taitotason mukaan ylhäältä alas)</label>
@@ -83,7 +82,6 @@
     <p id="setupError" class="error hidden"></p>
   </div>
 
-  <!-- NÄKYMÄ: TAPAHTUMAN TIEDOT + QR -->
   <div id="view-event" class="card hidden">
     <h2>Tapahtuma käynnissä</h2>
     <div class="row">
@@ -113,7 +111,6 @@
     <button id="btnReset" class="danger" style="margin-top:16px;">Keskeytä tapahtuma</button>
   </div>
 
-  <!-- NÄKYMÄ: PELAAJAN TULOSSYÖTTÖ -->
   <div id="view-player" class="card hidden">
     <h2>Syötä tulokset</h2>
     <p class="sub">Valitse kenttäsi ja syötä erien pisteet.</p>
@@ -125,7 +122,6 @@
     <button id="btnSubmitScores" class="hidden">Tallenna tulokset</button>
   </div>
 
-  <!-- NÄKYMÄ: SIJOITUKSET -->
   <div id="view-standings" class="card hidden">
     <h2>3 erän kierroksen tulos</h2>
     <div id="standingsContainer"></div>
@@ -136,10 +132,10 @@
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
 
   <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js";
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
     import {
-      getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot
-    } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js";
+      getDatabase, ref, set, get, onValue, update
+    } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyCh1kTTHGf5cgwT1ybPsTFE8LUniaKjkU8",
@@ -152,21 +148,15 @@
     };
 
     const app = initializeApp(firebaseConfig);
-    const db = getFirestore(app);
+    const db = getDatabase(app);
 
     const $ = id => document.getElementById(id);
 
-    // ============================================================
-    // TILA
-    // ============================================================
     let currentEventId = null;
     let currentEventData = null;
     let isOrganizer = false;
     let unsubscribeEvent = null;
 
-    // ============================================================
-    // APUFUNKTIOT
-    // ============================================================
     function showView(viewId) {
       ['view-setup', 'view-event', 'view-player', 'view-standings'].forEach(v => {
         $(v).classList.add('hidden');
@@ -178,12 +168,6 @@
       return 'padel-' + Math.random().toString(36).substring(2, 10).toUpperCase();
     }
 
-    // ============================================================
-    // KENTTÄJAKO
-    // courtSizes[0] = ylin kenttä, courtSizes[last] = alin kenttä.
-    // 5 pelaajan kentät ovat alimpina.
-    // Vahvimmat pelaajat ylös, heikoimmat alas.
-    // ============================================================
     function assignCourts(playerNames, prevRestRotations = []) {
       const n = playerNames.length;
       const valid = (n === 4 || n === 5 || n === 8 || n === 9 || n === 10 || n >= 12);
@@ -191,7 +175,6 @@
         throw new Error(`Pelaajamäärä ${n} ei ole tuettu. Käytä 4, 5, 8, 9, 10 tai vähintään 12 pelaajaa.`);
       }
 
-      // Lasketaan koot ylhäältä alaspäin
       let remaining = n;
       const courtSizes = [];
       while (remaining > 0) {
@@ -204,7 +187,6 @@
         }
       }
       courtSizes.reverse();
-      // Nyt courtSizes = [4, 4, ..., 5] : ylin = 4-p, alin = 5-p
 
       const courts = [];
       let playerIdx = 0;
@@ -213,7 +195,7 @@
         const size = courtSizes[c];
         const courtPlayers = playerNames.slice(playerIdx, playerIdx + size);
         playerIdx += size;
-        const courtNumber = c + 1; // 1 = ylin
+        const courtNumber = c + 1;
 
         let resting = null;
         let activePlayers = [...courtPlayers];
@@ -225,7 +207,6 @@
           activePlayers = courtPlayers.filter(p => p !== resting);
         }
 
-        // Parimuodostus: vahvin + heikoin vs keskimmäiset
         let team1 = [], team2 = [];
         if (activePlayers.length === 4) {
           team1 = [activePlayers[0], activePlayers[3]];
@@ -246,11 +227,7 @@
       return courts;
     }
 
-    // ============================================================
-    // SIJOITUSTEN LASKENTA
-    // ============================================================
     function calculateRoundBinaryWeights(courts, roundResults) {
-      // Kerätään kaikki piste-erot
       const allDiffs = [];
       courts.forEach(court => {
         const result = roundResults[court.courtIndex];
@@ -366,9 +343,6 @@
       return true;
     }
 
-    // ============================================================
-    // FIREBASE-OPERAATIOT
-    // ============================================================
     async function createEvent(playerNames) {
       const eventId = generateId();
       const courts = assignCourts(playerNames, []);
@@ -386,25 +360,22 @@
         status: 'active'
       };
 
-      await setDoc(doc(db, 'events', eventId), eventData);
+      await set(ref(db, 'events/' + eventId), eventData);
       return eventId;
     }
 
     async function loadEvent(eventId) {
-      const snap = await getDoc(doc(db, 'events', eventId));
-      return snap.exists() ? snap.data() : null;
+      const snapshot = await get(ref(db, 'events/' + eventId));
+      return snapshot.exists() ? snapshot.val() : null;
     }
 
     function listenEvent(eventId, callback) {
       if (unsubscribeEvent) { unsubscribeEvent(); unsubscribeEvent = null; }
-      unsubscribeEvent = onSnapshot(doc(db, 'events', eventId), (snap) => {
-        if (snap.exists()) callback(snap.data());
+      unsubscribeEvent = onValue(ref(db, 'events/' + eventId), (snapshot) => {
+        if (snapshot.exists()) callback(snapshot.val());
       });
     }
 
-    // ============================================================
-    // TAPAHTUMANÄKYMÄ
-    // ============================================================
     function initEventView(eventId) {
       showView('view-event');
       $('eventIdDisplay').value = eventId;
@@ -432,7 +403,6 @@
     }
 
     function renderEventView(data) {
-      // Kentät
       const container = $('courtsContainer');
       container.innerHTML = '';
       (data.courts || []).forEach(court => {
@@ -450,7 +420,6 @@
         container.appendChild(div);
       });
 
-      // Tulokset
       const resultsDiv = $('resultsLog');
       resultsDiv.innerHTML = '';
       (data.rounds || []).forEach((round, rIdx) => {
@@ -473,13 +442,9 @@
         resultsDiv.appendChild(roundDiv);
       });
 
-      // Näytetään "Laske kierros" kun kaikki 3 erää on syötetty
       $('btnNextRound').classList.toggle('hidden', !isCycleComplete(data));
     }
 
-    // ============================================================
-    // PELAAJANÄKYMÄ
-    // ============================================================
     function initPlayerView(eventId) {
       showView('view-player');
       loadEvent(eventId).then(data => {
@@ -527,7 +492,6 @@
       $('playerMsg').classList.add('hidden');
       $('playerError').classList.add('hidden');
 
-      // Etsitään ensimmäinen erä jolla ei ole tulosta tälle kentälle
       let targetRound = -1;
       for (let r = 0; r < 3; r++) {
         if (!data.rounds[r].results[courtIndex]) {
@@ -536,7 +500,6 @@
         }
       }
 
-      // Näytetään kaikki erät
       for (let r = 0; r < 3; r++) {
         const result = data.rounds[r].results[courtIndex];
         const div = document.createElement('div');
@@ -589,12 +552,11 @@
         $('playerError').classList.add('hidden');
 
         try {
-          const eventRef = doc(db, 'events', currentEventId);
-          const eventSnap = await getDoc(eventRef);
-          if (!eventSnap.exists()) throw new Error('Tapahtuma ei löydy.');
-          const eventData = eventSnap.data();
+          const eventRef = ref(db, 'events/' + currentEventId);
+          const snapshot = await get(eventRef);
+          if (!snapshot.exists()) throw new Error('Tapahtuma ei löydy.');
+          const eventData = snapshot.val();
 
-          // Race condition -tarkistus: onko tämä erä jo syötetty?
           if (eventData.rounds[targetRound].results[courtIndex]) {
             throw new Error('Tämän erän tulokset on jo syötetty. Päivitä sivu.');
           }
@@ -605,13 +567,11 @@
             timestamp: new Date().toISOString()
           };
 
-          await updateDoc(eventRef, { rounds: eventData.rounds });
+          await update(eventRef, { rounds: eventData.rounds });
 
           $('playerMsg').textContent = `Erä ${targetRound + 1} tallennettu!`;
           $('playerMsg').classList.remove('hidden');
           $('btnSubmitScores').classList.add('hidden');
-
-          // Seuraava erä näkyy automaattisesti onSnapshot-päivityksen kautta
         } catch (e) {
           $('playerError').textContent = 'Virhe: ' + e.message;
           $('playerError').classList.remove('hidden');
@@ -619,9 +579,6 @@
       };
     }
 
-    // ============================================================
-    // SIJOITUSNÄKYMÄ
-    // ============================================================
     function showStandings() {
       if (!currentEventData) return;
       showView('view-standings');
@@ -656,9 +613,6 @@
       container.innerHTML = html;
     }
 
-    // ============================================================
-    // NAPIT
-    // ============================================================
     $('btnCreate').addEventListener('click', async () => {
       const raw = $('playerNames').value.trim();
       const names = raw.split('\n').map(s => s.trim()).filter(s => s.length > 0);
@@ -722,8 +676,7 @@
         ]
       };
 
-      await updateDoc(doc(db, 'events', currentEventId), updatedData);
-      // Palaa tapahtumanäkymään (onSnapshot päivittää)
+      await update(ref(db, 'events/' + currentEventId), updatedData);
       showView('view-event');
       $('btnNextRound').classList.add('hidden');
     });
@@ -743,9 +696,6 @@
       showView('view-setup');
     });
 
-    // ============================================================
-    // KÄYNNISTYS
-    // ============================================================
     (function init() {
       const params = new URLSearchParams(window.location.search);
       const eventId = params.get('event');
