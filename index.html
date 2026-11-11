@@ -35,6 +35,7 @@
     button.secondary:active { background: #cbd5e0; }
     button.danger { background: #e53e3e; }
     button.danger:active { background: #c53030; }
+    button:disabled { background: #a0aec0; cursor: not-allowed; }
     .row { display: flex; gap: 8px; align-items: center; }
     .row > * { flex: 1; }
     .hidden { display: none !important; }
@@ -65,6 +66,9 @@
     .round-row.waiting { background: #f7fafc; border-left: 3px solid #cbd5e0; color: #718096; }
     .muted { color: #718096; font-size: 0.8rem; }
     .divider { height: 1px; background: #e2e8f0; margin: 16px 0; }
+    .round-block { background: #f7fafc; padding: 8px; border-radius: 6px; margin: 6px 0; }
+    .round-block.done { background: #f0fff4; }
+    .round-block.pending { background: #fffaf0; }
     .history-court { background: #ebf8ff; border-left: 4px solid #2c5282; padding: 12px; border-radius: 8px; margin-bottom: 12px; }
     .history-court-title { font-weight: 700; font-size: 1rem; margin-bottom: 4px; color: #2c5282; }
   </style>
@@ -118,11 +122,8 @@
     <button id="btnEnterScores" class="secondary">✏️ Syötä tuloksia (järjestäjä)</button>
     <button id="btnShowHistory" class="secondary hidden">📊 Näytä edellisen kierroksen tulokset</button>
 
-    <h2>Kentät ja pelaajat</h2>
+    <h2>Kentät ja eräparit</h2>
     <div id="courtsContainer"></div>
-
-    <h2>Syötetyt tulokset</h2>
-    <div id="resultsLog"></div>
 
     <button id="btnNextRound" class="hidden">Laske kierros ja näytä sijoitukset</button>
     <button id="btnReset" class="danger" style="margin-top:16px;">Keskeytä tapahtuma</button>
@@ -215,6 +216,10 @@
       return round.results[courtIndex] || null;
     }
 
+    function getRoundPairing(court, roundIdx) {
+      return court?.rounds?.[roundIdx] || null;
+    }
+
     function formatTimestamp(iso) {
       try {
         return new Date(iso).toLocaleString('fi-FI');
@@ -222,9 +227,41 @@
     }
 
     // ============================================================
+    // ERÄKOHTAISTEN PARIEN GENEROINTI
+    // 4 pelaajaa: round-robin (jokainen pelaa kerran jokaisen kanssa)
+    // 5 pelaajaa: 3 erää, yksi lepää per erä, parit vaihtuvat
+    // restRotation kiertää lepoa eri pelaajille eri kierroksilla.
+    // ============================================================
+    function generateCourtRounds(players, restRotation = 0) {
+      const n = players.length;
+
+      if (n === 4) {
+        const [a, b, c, d] = players;
+        return [
+          { roundIndex: 0, team1: [a, b], team2: [c, d], resting: null },
+          { roundIndex: 1, team1: [a, c], team2: [b, d], resting: null },
+          { roundIndex: 2, team1: [a, d], team2: [b, c], resting: null }
+        ];
+      }
+
+      if (n === 5) {
+        const rot = ((restRotation % 5) + 5) % 5;
+        const rotated = [...players.slice(rot), ...players.slice(0, rot)];
+        const [p0, p1, p2, p3, p4] = rotated;
+        return [
+          { roundIndex: 0, team1: [p0, p1], team2: [p2, p3], resting: p4 },
+          { roundIndex: 1, team1: [p0, p4], team2: [p1, p2], resting: p3 },
+          { roundIndex: 2, team1: [p0, p2], team2: [p3, p4], resting: p1 }
+        ];
+      }
+
+      return [];
+    }
+
+    // ============================================================
     // KENTTÄJAKO
     // ============================================================
-    function assignCourts(playerNames, prevRestRotations = []) {
+    function assignCourts(playerNames, prevCourts = []) {
       const n = playerNames.length;
       const valid = (n === 4 || n === 5 || n === 8 || n === 9 || n === 10 || n >= 12);
       if (!valid) {
@@ -242,7 +279,7 @@
           remaining -= 5;
         }
       }
-      courtSizes.reverse(); // alin kenttä = 5 pelaajaa
+      courtSizes.reverse();
 
       const courts = [];
       let playerIdx = 0;
@@ -252,41 +289,99 @@
         const courtPlayers = playerNames.slice(playerIdx, playerIdx + size);
         playerIdx += size;
         const courtNumber = c + 1;
-
-        let resting = null;
-        let activePlayers = [...courtPlayers];
-
-        if (size === 5) {
-          const restRotation = prevRestRotations[c] || 0;
-          const restIdx = restRotation % courtPlayers.length;
-          resting = courtPlayers[restIdx];
-          activePlayers = courtPlayers.filter(p => p !== resting);
-        }
-
-        let team1 = [], team2 = [];
-        if (activePlayers.length === 4) {
-          team1 = [activePlayers[0], activePlayers[3]];
-          team2 = [activePlayers[1], activePlayers[2]];
-        }
+        const prevRot = prevCourts[c]?.restRotation || 0;
+        const rounds = generateCourtRounds(courtPlayers, prevRot);
 
         courts.push({
           courtIndex: c,
           courtNumber,
           players: courtPlayers,
-          activePlayers,
-          resting,
-          team1,
-          team2,
-          restRotation: size === 5 ? (prevRestRotations[c] || 0) + 1 : 0
+          restRotation: prevRot + 1,
+          rounds
         });
       }
       return courts;
     }
 
     // ============================================================
+    // NOUSU/LASKU-LOGIIKKA (paikallinen)
+    // Jokaiselta kentältä:
+    //  - paras nousee 1 tason ylös (paitsi ylin kenttä)
+    //  - huonoin laskee 1 tason alas (paitsi alin kenttä)
+    // Vierekkäiset kentät vaihtavat 1 pelaajan keskenään.
+    // ============================================================
+    function computeNextCourts(oldCourts, standings) {
+      const N = oldCourts.length;
+
+      // Yksittäinen kenttä — ei nousuja/laskuja, mutta lepo kiertää
+      if (N <= 1) {
+        return oldCourts.map((c, i) => {
+          const currentRot = c.restRotation || 0;
+          return {
+            courtIndex: i,
+            courtNumber: i + 1,
+            players: [...c.players],
+            restRotation: currentRot + 1,
+            rounds: generateCourtRounds(c.players, currentRot)
+          };
+        });
+      }
+
+      const bests = new Array(N).fill(null);
+      const worsts = new Array(N).fill(null);
+
+      for (let i = 0; i < N; i++) {
+        const courtPlayers = oldCourts[i].players;
+        const ranked = courtPlayers
+          .map(p => ({ name: p, rank: standings.findIndex(s => s.name === p) }))
+          .filter(x => x.rank >= 0)
+          .sort((a, b) => a.rank - b.rank);
+        if (ranked.length === 0) continue;
+        bests[i] = ranked[0].name;
+        worsts[i] = ranked[ranked.length - 1].name;
+      }
+
+      const newPlayerLists = [];
+      for (let i = 0; i < N; i++) {
+        let list = [...oldCourts[i].players];
+
+        // Paras nousee ylös (paitsi ylin kenttä)
+        if (i > 0 && bests[i]) {
+          list = list.filter(p => p !== bests[i]);
+        }
+        // Huonoin laskee alas (paitsi alin kenttä)
+        if (i < N - 1 && worsts[i]) {
+          list = list.filter(p => p !== worsts[i]);
+        }
+
+        // Yläpuolelta putoava huonoin
+        if (i > 0 && worsts[i - 1]) {
+          list.push(worsts[i - 1]);
+        }
+        // Alapuolelta nouseva paras
+        if (i < N - 1 && bests[i + 1]) {
+          list.push(bests[i + 1]);
+        }
+
+        newPlayerLists.push(list);
+      }
+
+      return newPlayerLists.map((players, i) => {
+        const currentRot = oldCourts[i].restRotation || 0;
+        return {
+          courtIndex: i,
+          courtNumber: i + 1,
+          players,
+          restRotation: currentRot + 1,
+          rounds: generateCourtRounds(players, currentRot)
+        };
+      });
+    }
+
+    // ============================================================
     // LASKENTA
     // ============================================================
-    function calculateRoundBinaryWeights(courts, roundResults) {
+    function calculateRoundBinaryWeights(courts, roundResults, roundIdx) {
       const allDiffs = [];
       courts.forEach(court => {
         const result = roundResults?.[court.courtIndex];
@@ -313,17 +408,22 @@
       courts.forEach(court => {
         const result = roundResults?.[court.courtIndex];
         if (!result) return;
+        const pairing = getRoundPairing(court, roundIdx);
+        if (!pairing) return;
+
         const diff = Math.abs(result.team1Score - result.team2Score);
         const weight = weightMap.get(diff) || 1;
         const team1Won = result.team1Score > result.team2Score;
 
-        court.players.forEach(p => {
-          if (court.resting === p) return;
-          const isTeam1 = court.team1.includes(p);
-          const won = (isTeam1 && team1Won) || (!isTeam1 && !team1Won);
+        pairing.team1.forEach(p => {
           if (!playerB[p]) playerB[p] = { ww: 0, tw: 0 };
           playerB[p].tw += weight;
-          if (won) playerB[p].ww += weight;
+          if (team1Won) playerB[p].ww += weight;
+        });
+        pairing.team2.forEach(p => {
+          if (!playerB[p]) playerB[p] = { ww: 0, tw: 0 };
+          playerB[p].tw += weight;
+          if (!team1Won) playerB[p].ww += weight;
         });
       });
 
@@ -339,30 +439,35 @@
       const stats = {};
       playerNames.forEach(p => { stats[p] = { wins: 0, played: 0, pointDiffSum: 0 }; });
 
-      (rounds || []).forEach(round => {
+      (rounds || []).forEach((round, rIdx) => {
         (courts || []).forEach(court => {
           const result = round?.results?.[court.courtIndex];
           if (!result) return;
+          const pairing = getRoundPairing(court, rIdx);
+          if (!pairing) return;
+
           const team1Won = result.team1Score > result.team2Score;
           const diff = result.team1Score - result.team2Score;
 
-          court.players.forEach(p => {
-            if (court.resting === p) return;
+          pairing.team1.forEach(p => {
             if (!stats[p]) stats[p] = { wins: 0, played: 0, pointDiffSum: 0 };
             stats[p].played++;
-            const isTeam1 = court.team1.includes(p);
-            const won = (isTeam1 && team1Won) || (!isTeam1 && !team1Won);
-            if (won) stats[p].wins++;
-            const ownDiff = isTeam1 ? diff : -diff;
-            stats[p].pointDiffSum += ownDiff;
+            if (team1Won) stats[p].wins++;
+            stats[p].pointDiffSum += diff;
+          });
+          pairing.team2.forEach(p => {
+            if (!stats[p]) stats[p] = { wins: 0, played: 0, pointDiffSum: 0 };
+            stats[p].played++;
+            if (!team1Won) stats[p].wins++;
+            stats[p].pointDiffSum += -diff;
           });
         });
       });
 
       const bValues = {};
       playerNames.forEach(p => { bValues[p] = []; });
-      (rounds || []).forEach(round => {
-        const roundB = calculateRoundBinaryWeights(courts, round?.results || {});
+      (rounds || []).forEach((round, rIdx) => {
+        const roundB = calculateRoundBinaryWeights(courts, round?.results || {}, rIdx);
         for (const p in roundB) {
           if (bValues[p]) bValues[p].push(roundB[p]);
         }
@@ -440,11 +545,10 @@
     }
 
     // ============================================================
-    // TAPAHTUMANÄKYMÄ (JÄRJESTÄJÄ)
+    // TAPAHTUMANÄKYMÄ
     // ============================================================
     function goToEventView() {
       showView('view-event');
-
       if (!currentEventId) return;
 
       $('eventIdDisplay').value = currentEventId;
@@ -461,9 +565,7 @@
             colorLight: '#ffffff',
             correctLevel: QRCode.CorrectLevel.H
           });
-        } catch (e) {
-          console.error('QR-virhe:', e);
-        }
+        } catch (e) { console.error('QR-virhe:', e); }
       }
 
       listenEvent(currentEventId, (data) => {
@@ -480,41 +582,28 @@
     function renderEventView(data) {
       const container = $('courtsContainer');
       container.innerHTML = '';
+
       (data.courts || []).forEach(court => {
         const div = document.createElement('div');
         div.className = 'court-card';
-        div.innerHTML = `
-          <div class="court-title">Kenttä ${court.courtNumber}</div>
-          <div class="player-list">
-            ${court.team1.map(p => `<span>${p}</span>`).join(' & ')}
-            <span class="muted"> vs </span>
-            ${court.team2.map(p => `<span>${p}</span>`).join(' & ')}
-            ${court.resting ? `<div><span class="tag">Lepo: ${court.resting}</span></div>` : ''}
-          </div>
-        `;
-        container.appendChild(div);
-      });
+        let html = `<div class="court-title">Kenttä ${court.courtNumber}</div>`;
 
-      const resultsDiv = $('resultsLog');
-      resultsDiv.innerHTML = '';
-      (data.rounds || []).forEach((round, rIdx) => {
-        const roundDiv = document.createElement('div');
-        roundDiv.style.marginBottom = '10px';
-        roundDiv.innerHTML = `<strong>Erä ${rIdx + 1}</strong>`;
-        let anyResult = false;
-        (data.courts || []).forEach(court => {
-          const result = round?.results?.[court.courtIndex];
-          if (result) {
-            anyResult = true;
-            roundDiv.innerHTML += `<div class="round-row done">
-              K${court.courtNumber}: ${court.team1.join('&')} <strong>${result.team1Score}–${result.team2Score}</strong> ${court.team2.join('&')}
-            </div>`;
-          }
+        (court.rounds || []).forEach((pairing, rIdx) => {
+          const result = data.rounds?.[rIdx]?.results?.[court.courtIndex];
+          const cls = result ? 'round-block done' : 'round-block pending';
+          html += `<div class="${cls}">
+            <div style="font-size:0.8rem; color:#4a5568;"><strong>Erä ${rIdx + 1}</strong>${pairing.resting ? ` <span class="tag">Lepo: ${pairing.resting}</span>` : ''}</div>
+            <div class="player-list">
+              ${pairing.team1.join(' & ')} <span class="muted">vs</span> ${pairing.team2.join(' & ')}
+            </div>
+            ${result
+              ? `<div style="font-size:0.85rem; margin-top:2px;"><strong>Tulos: ${result.team1Score}–${result.team2Score}</strong></div>`
+              : `<div class="muted" style="margin-top:2px;">Odottaa tulosta</div>`}
+          </div>`;
         });
-        if (!anyResult) {
-          roundDiv.innerHTML += `<div class="muted" style="margin-left:8px;">Ei vielä tuloksia.</div>`;
-        }
-        resultsDiv.appendChild(roundDiv);
+
+        div.innerHTML = html;
+        container.appendChild(div);
       });
 
       $('btnNextRound').classList.toggle('hidden', !isCycleComplete(data));
@@ -535,12 +624,8 @@
 
     function renderHistoryView() {
       const prev = currentEventData?.previousCycle;
-      if (!prev) {
-        goToEventView();
-        return;
-      }
+      if (!prev) { goToEventView(); return; }
 
-      // Kartoitetaan pelaajien nykyiset kentät
       const currentCourtOf = {};
       (currentEventData.courts || []).forEach(c => {
         (c.players || []).forEach(p => { currentCourtOf[p] = c.courtNumber; });
@@ -549,50 +634,32 @@
       const container = $('historyContainer');
       container.innerHTML = '';
 
-      // Otsikko / aikaleima
       const header = document.createElement('div');
       header.className = 'info-box';
       header.innerHTML = `
         <div><strong>Kierros valmistui:</strong> ${prev.completedAt ? formatTimestamp(prev.completedAt) : '–'}</div>
         <div class="muted" style="margin-top:4px;">
-          Alla on päättyneen 3 erän kierroksen kenttäkohtaiset tulokset sekä pelaajien siirtymiset uusille kentille.
+          Alla on päättyneen 3 erän kierroksen eräkohtaiset parit ja tulokset sekä pelaajien siirtymiset uusille kentille.
         </div>
       `;
       container.appendChild(header);
 
-      // Kenttäkohtaiset tulokset
       (prev.courts || []).forEach(court => {
         const courtDiv = document.createElement('div');
         courtDiv.className = 'history-court';
 
         let html = `<div class="history-court-title">Kenttä ${court.courtNumber} (edellinen)</div>`;
-        html += `<div class="player-list" style="margin-bottom:8px;">
-          ${(court.team1 || []).join(' & ')}
-          <span class="muted"> vs </span>
-          ${(court.team2 || []).join(' & ')}
-          ${court.resting ? `<span class="tag">Lepo: ${court.resting}</span>` : ''}
-        </div>`;
 
-        // Erätulokset
-        html += `<div style="margin-bottom:8px;">
-          <strong style="font-size:0.85rem; color:#4a5568;">Erätulokset:</strong>`;
-        let anyRound = false;
-        for (let r = 0; r < 3; r++) {
-          const result = prev.rounds?.[r]?.results?.[court.courtIndex];
-          if (result) {
-            anyRound = true;
-            html += `<div class="round-row done">Erä ${r + 1}: <strong>${result.team1Score}–${result.team2Score}</strong></div>`;
-          }
-        }
-        if (!anyRound) {
-          html += `<div class="muted">Ei tuloksia</div>`;
-        }
-        html += `</div>`;
+        (court.rounds || []).forEach((pairing, rIdx) => {
+          const result = prev.rounds?.[rIdx]?.results?.[court.courtIndex];
+          html += `<div class="round-block ${result ? 'done' : 'pending'}">
+            <div style="font-size:0.8rem; color:#4a5568;"><strong>Erä ${rIdx + 1}</strong>${pairing.resting ? ` <span class="tag">Lepo: ${pairing.resting}</span>` : ''}</div>
+            <div class="player-list">${pairing.team1.join(' & ')} <span class="muted">vs</span> ${pairing.team2.join(' & ')}</div>
+            ${result ? `<div style="font-size:0.85rem;"><strong>Tulos: ${result.team1Score}–${result.team2Score}</strong></div>` : ''}
+          </div>`;
+        });
 
-        // Pelaajien siirrot
-        html += `<div style="margin-top:8px;">
-          <strong style="font-size:0.85rem; color:#4a5568;">Pelaajien siirrot:</strong>
-        </div>`;
+        html += `<div style="margin-top:8px;"><strong style="font-size:0.85rem; color:#4a5568;">Pelaajien siirrot:</strong></div>`;
         (court.players || []).forEach(p => {
           const oldCourt = court.courtNumber;
           const newCourt = currentCourtOf[p];
@@ -613,7 +680,7 @@
         container.appendChild(courtDiv);
       });
 
-      // Yhteenvetotaulukko siirroista
+      // Yhteenvetotaulukko
       const summaryDiv = document.createElement('div');
       summaryDiv.style.marginTop = '12px';
       summaryDiv.innerHTML = `<h2>Yhteenveto siirroista</h2>`;
@@ -621,11 +688,7 @@
       const movements = [];
       (prev.courts || []).forEach(court => {
         (court.players || []).forEach(p => {
-          movements.push({
-            name: p,
-            oldCourt: court.courtNumber,
-            newCourt: currentCourtOf[p]
-          });
+          movements.push({ name: p, oldCourt: court.courtNumber, newCourt: currentCourtOf[p] });
         });
       });
       movements.sort((a, b) => {
@@ -700,8 +763,7 @@
       (data.courts || []).forEach(court => {
         const opt = document.createElement('option');
         opt.value = String(court.courtIndex);
-        opt.textContent = `Kenttä ${court.courtNumber}: ${court.team1.join(' & ')} vs ${court.team2.join(' & ')}` +
-          (court.resting ? ` (lepo: ${court.resting})` : '');
+        opt.textContent = `Kenttä ${court.courtNumber} (${court.players.join(', ')})`;
         select.appendChild(opt);
       });
 
@@ -748,12 +810,17 @@
         }
       }
 
+      // Näytä kaikki 3 erää
       for (let r = 0; r < 3; r++) {
+        const pairing = getRoundPairing(court, r);
         const result = getCourtResult(data, r, courtIndex);
         const div = document.createElement('div');
-        if (result) {
+        if (!pairing) {
+          div.className = 'round-row waiting';
+          div.innerHTML = `<strong>Erä ${r + 1}:</strong> <span class="muted">tieto puuttuu</span>`;
+        } else if (result) {
           div.className = 'round-row done';
-          div.innerHTML = `<strong>Erä ${r + 1}:</strong> ${court.team1.join(' & ')} <strong>${result.team1Score}–${result.team2Score}</strong> ${court.team2.join(' & ')} <span style="color:#38a169;">✓</span>`;
+          div.innerHTML = `<strong>Erä ${r + 1}:</strong> ${pairing.team1.join(' & ')} <strong>${result.team1Score}–${result.team2Score}</strong> ${pairing.team2.join(' & ')} <span style="color:#38a169;">✓</span>`;
         } else if (r === targetRound) {
           div.className = 'round-row pending';
           div.innerHTML = `<strong>Erä ${r + 1}:</strong> syötä alla`;
@@ -770,17 +837,25 @@
         return;
       }
 
+      const pairing = getRoundPairing(court, targetRound);
+      if (!pairing) {
+        formDiv.innerHTML += `<div class="error">Erän paritieto puuttuu.</div>`;
+        $('btnSubmitScores').classList.add('hidden');
+        return;
+      }
+
       const form = document.createElement('div');
       form.style.marginTop = '12px';
       form.innerHTML = `
         <label>Erä ${targetRound + 1} – pisteet</label>
         <div class="score-row">
-          <span style="flex:1; font-size:0.85rem;">${court.team1.join(' & ')}</span>
+          <span style="flex:1; font-size:0.85rem;">${pairing.team1.join(' & ')}</span>
           <input type="number" id="score1" min="0" max="99" inputmode="numeric" placeholder="0">
           <span>–</span>
           <input type="number" id="score2" min="0" max="99" inputmode="numeric" placeholder="0">
-          <span style="flex:1; font-size:0.85rem;">${court.team2.join(' & ')}</span>
+          <span style="flex:1; font-size:0.85rem;">${pairing.team2.join(' & ')}</span>
         </div>
+        ${pairing.resting ? `<div class="muted" style="margin-top:4px;">Lepo: ${pairing.resting}</div>` : ''}
       `;
       formDiv.appendChild(form);
 
@@ -857,14 +932,30 @@
       });
       html += '</table>';
 
-      if (standings.length >= 2) {
-        const top = standings.slice(0, 2).map(s => s.name).join(', ');
-        const bottom = standings.slice(-2).map(s => s.name).join(', ');
-        html += `<div class="info-box" style="margin-top:12px;">
-          <div><span class="badge-up">▲ Nousisivat:</span> ${top}</div>
-          <div><span class="badge-down">▼ Laskisivat:</span> ${bottom}</div>
-          <div class="muted" style="margin-top:6px;">Vahvista painamalla alla. Tämä aloittaa uuden 3 erän kierroksen.</div>
-        </div>`;
+      html += `<div class="info-box" style="margin-top:12px;">
+        <div><strong>Siirrot seuraavalle kierrokselle:</strong></div>
+        <div class="muted" style="margin-top:4px;">
+          Jokaiselta kentältä paras nousee yhden tason ylös ja huonoin laskee yhden tason alas (ylin ja alin kenttä vain toiseen suuntaan).
+        </div>
+      </div>`;
+
+      // Esikatselu siirroista
+      try {
+        const previewCourts = computeNextCourts(currentEventData.courts, standings);
+        html += `<table class="standings-table" style="margin-top:8px;">
+          <tr><th>Kenttä</th><th>Uudet pelaajat</th></tr>`;
+        previewCourts.forEach((c, i) => {
+          const oldNames = (currentEventData.courts[i]?.players || []).join(', ');
+          const newNames = c.players.join(', ');
+          const changed = oldNames !== newNames;
+          html += `<tr>
+            <td>K${c.courtNumber}</td>
+            <td style="${changed ? 'background:#fefcbf;' : ''}">${newNames}</td>
+          </tr>`;
+        });
+        html += `</table>`;
+      } catch (e) {
+        html += `<div class="error">Siirtojen esikatselu epäonnistui: ${e.message}</div>`;
       }
 
       container.innerHTML = html;
@@ -873,7 +964,6 @@
     // ============================================================
     // NAPIT
     // ============================================================
-
     $('btnCreate').addEventListener('click', async () => {
       const raw = $('playerNames').value.trim();
       const names = raw.split('\n').map(s => s.trim()).filter(s => s.length > 0);
@@ -967,14 +1057,11 @@
       }
 
       const standings = computeStandings(currentEventData);
-      const newOrder = standings.map(s => s.name);
-      const prevRestRotations = (currentEventData.courts || []).map(c => c.restRotation || 0);
-
       let newCourts;
       try {
-        newCourts = assignCourts(newOrder, prevRestRotations);
+        newCourts = computeNextCourts(currentEventData.courts, standings);
       } catch (e) {
-        alert('Virhe: ' + e.message);
+        alert('Virhe siirtojen laskennassa: ' + e.message);
         return;
       }
 
@@ -992,14 +1079,10 @@
       ];
 
       try {
-        // Yksi atomimainen monipolkuinen päivitys
-        const updates = {};
-        updates[`events/${currentEventId}/previousCycle`] = previousCycle;
-        updates[`events/${currentEventId}/courts`] = newCourts;
-        updates[`events/${currentEventId}/rounds`] = newRounds;
-        await update(ref(db), updates);
+        await set(ref(db, `events/${currentEventId}/previousCycle`), previousCycle);
+        await set(ref(db, `events/${currentEventId}/courts`), newCourts);
+        await set(ref(db, `events/${currentEventId}/rounds`), newRounds);
 
-        // Päivitä paikallinen tila välittömästi, jotta historia-näkymä toimii
         currentEventData = {
           ...currentEventData,
           previousCycle,
