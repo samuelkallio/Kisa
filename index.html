@@ -46,7 +46,7 @@
     .player-list { font-size: 0.9rem; line-height: 1.6; }
     .tag { display: inline-block; background: #bee3f8; padding: 1px 6px; border-radius: 4px; font-size: 0.75rem; margin-left: 4px; }
     .score-row { display: flex; gap: 8px; align-items: center; margin: 8px 0; }
-    .score-row input { width: 60px; text-align: center; }
+    .score-row input { width: 70px; text-align: center; }
     .score-row span { font-weight: 600; }
     .standings-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
     .standings-table th, .standings-table td { padding: 6px 4px; text-align: left; border-bottom: 1px solid #e2e8f0; }
@@ -62,7 +62,9 @@
     .round-row { background: #f7fafc; padding: 6px 8px; border-radius: 6px; margin: 4px 0; font-size: 0.85rem; }
     .round-row.done { background: #f0fff4; border-left: 3px solid #38a169; }
     .round-row.pending { background: #fffaf0; border-left: 3px solid #ed8936; }
+    .round-row.waiting { background: #f7fafc; border-left: 3px solid #cbd5e0; color: #718096; }
     .muted { color: #718096; font-size: 0.8rem; }
+    .divider { height: 1px; background: #e2e8f0; margin: 16px 0; }
   </style>
 </head>
 <body>
@@ -70,6 +72,7 @@
   <h1>🎾 Padel 3 Erää</h1>
   <p class="sub">Voitto-osuus → piste-eron keskiarvo → painotetut erät</p>
 
+  <!-- ========== NÄKYMÄ: ALUSTUS ========== -->
   <div id="view-setup" class="card">
     <h2>Järjestäjän alustus</h2>
     <label>Pelaajien nimet (yksi per rivi, taitotason mukaan ylhäältä alas)</label>
@@ -80,8 +83,17 @@
     </div>
     <button id="btnCreate">Luo tapahtuma ja kentät</button>
     <p id="setupError" class="error hidden"></p>
+
+    <div class="divider"></div>
+
+    <h2>Liity tapahtumaan</h2>
+    <label>Tapahtuman koodi</label>
+    <input id="joinCode" type="text" placeholder="padel-XXXXXXXX" autocapitalize="off" autocorrect="off" spellcheck="false">
+    <button id="btnJoin" class="secondary">Liity koodilla</button>
+    <p id="joinError" class="error hidden"></p>
   </div>
 
+  <!-- ========== NÄKYMÄ: TAPAHTUMA (JÄRJESTÄJÄ) ========== -->
   <div id="view-event" class="card hidden">
     <h2>Tapahtuma käynnissä</h2>
     <div class="row">
@@ -101,6 +113,8 @@
     <input id="shareLink" type="text" readonly>
     <p id="copyMsg" class="success hidden">Kopioitu!</p>
 
+    <button id="btnEnterScores" class="secondary">✏️ Syötä tuloksia (järjestäjä)</button>
+
     <h2>Kentät ja pelaajat</h2>
     <div id="courtsContainer"></div>
 
@@ -111,9 +125,13 @@
     <button id="btnReset" class="danger" style="margin-top:16px;">Keskeytä tapahtuma</button>
   </div>
 
+  <!-- ========== NÄKYMÄ: PELAAJA ========== -->
   <div id="view-player" class="card hidden">
     <h2>Syötä tulokset</h2>
     <p class="sub">Valitse kenttäsi ja syötä erien pisteet.</p>
+
+    <button id="btnPlayerBack" class="secondary hidden">← Takaisin tapahtumaan</button>
+
     <label>Kenttä</label>
     <select id="courtSelect"></select>
     <div id="playerScoreForm"></div>
@@ -122,6 +140,7 @@
     <button id="btnSubmitScores" class="hidden">Tallenna tulokset</button>
   </div>
 
+  <!-- ========== NÄKYMÄ: SIJOITUKSET ========== -->
   <div id="view-standings" class="card hidden">
     <h2>3 erän kierroksen tulos</h2>
     <div id="standingsContainer"></div>
@@ -154,9 +173,11 @@
 
     let currentEventId = null;
     let currentEventData = null;
-    let isOrganizer = false;
     let unsubscribeEvent = null;
 
+    // ============================================================
+    // APUFUNKTIOT
+    // ============================================================
     function showView(viewId) {
       ['view-setup', 'view-event', 'view-player', 'view-standings'].forEach(v => {
         $(v).classList.add('hidden');
@@ -168,6 +189,25 @@
       return 'padel-' + Math.random().toString(36).substring(2, 10).toUpperCase();
     }
 
+    function normalizeCode(input) {
+      const trimmed = String(input || '').trim();
+      if (!trimmed) return '';
+      const lower = trimmed.toLowerCase();
+      if (lower.startsWith('padel-')) {
+        return 'padel-' + trimmed.substring(6).toUpperCase();
+      }
+      return trimmed;
+    }
+
+    function getCourtResult(eventData, roundIdx, courtIndex) {
+      const round = eventData?.rounds?.[roundIdx];
+      if (!round || !round.results) return null;
+      return round.results[courtIndex] || null;
+    }
+
+    // ============================================================
+    // KENTTÄJAKO
+    // ============================================================
     function assignCourts(playerNames, prevRestRotations = []) {
       const n = playerNames.length;
       const valid = (n === 4 || n === 5 || n === 8 || n === 9 || n === 10 || n >= 12);
@@ -186,7 +226,7 @@
           remaining -= 5;
         }
       }
-      courtSizes.reverse();
+      courtSizes.reverse(); // alin kenttä = 5 pelaajaa
 
       const courts = [];
       let playerIdx = 0;
@@ -227,10 +267,13 @@
       return courts;
     }
 
+    // ============================================================
+    // LASKENTA
+    // ============================================================
     function calculateRoundBinaryWeights(courts, roundResults) {
       const allDiffs = [];
       courts.forEach(court => {
-        const result = roundResults[court.courtIndex];
+        const result = roundResults?.[court.courtIndex];
         if (result) {
           allDiffs.push(Math.abs(result.team1Score - result.team2Score));
         }
@@ -252,7 +295,7 @@
 
       const playerB = {};
       courts.forEach(court => {
-        const result = roundResults[court.courtIndex];
+        const result = roundResults?.[court.courtIndex];
         if (!result) return;
         const diff = Math.abs(result.team1Score - result.team2Score);
         const weight = weightMap.get(diff) || 1;
@@ -280,9 +323,9 @@
       const stats = {};
       playerNames.forEach(p => { stats[p] = { wins: 0, played: 0, pointDiffSum: 0 }; });
 
-      rounds.forEach(round => {
-        courts.forEach(court => {
-          const result = round.results[court.courtIndex];
+      (rounds || []).forEach(round => {
+        (courts || []).forEach(court => {
+          const result = round?.results?.[court.courtIndex];
           if (!result) return;
           const team1Won = result.team1Score > result.team2Score;
           const diff = result.team1Score - result.team2Score;
@@ -302,8 +345,8 @@
 
       const bValues = {};
       playerNames.forEach(p => { bValues[p] = []; });
-      rounds.forEach(round => {
-        const roundB = calculateRoundBinaryWeights(courts, round.results);
+      (rounds || []).forEach(round => {
+        const roundB = calculateRoundBinaryWeights(courts, round?.results || {});
         for (const p in roundB) {
           if (bValues[p]) bValues[p].push(roundB[p]);
         }
@@ -333,6 +376,7 @@
 
     function isCycleComplete(eventData) {
       if (!eventData || !eventData.rounds || !eventData.courts) return false;
+      if (eventData.courts.length === 0) return false;
       for (let r = 0; r < 3; r++) {
         const round = eventData.rounds[r];
         if (!round || !round.results) return false;
@@ -343,6 +387,9 @@
       return true;
     }
 
+    // ============================================================
+    // FIREBASE
+    // ============================================================
     async function createEvent(playerNames) {
       const eventId = generateId();
       const courts = assignCourts(playerNames, []);
@@ -372,31 +419,45 @@
     function listenEvent(eventId, callback) {
       if (unsubscribeEvent) { unsubscribeEvent(); unsubscribeEvent = null; }
       unsubscribeEvent = onValue(ref(db, 'events/' + eventId), (snapshot) => {
-        if (snapshot.exists()) callback(snapshot.val());
+        callback(snapshot.exists() ? snapshot.val() : null);
       });
     }
 
-    function initEventView(eventId) {
+    // ============================================================
+    // TAPAHTUMANÄKYMÄ (JÄRJESTÄJÄ)
+    // ============================================================
+    function goToEventView() {
       showView('view-event');
-      $('eventIdDisplay').value = eventId;
-      const link = window.location.origin + window.location.pathname + '?event=' + eventId;
+      $('btnPlayerBack').classList.add('hidden');
+
+      if (!currentEventId) return;
+
+      $('eventIdDisplay').value = currentEventId;
+      const link = window.location.origin + window.location.pathname + '?event=' + currentEventId;
       $('shareLink').value = link;
 
-      $('qr-container').innerHTML = '';
-      try {
-        new QRCode($('qr-container'), {
-          text: link,
-          width: 200,
-          height: 200,
-          colorDark: '#1a365d',
-          colorLight: '#ffffff',
-          correctLevel: QRCode.CorrectLevel.H
-        });
-      } catch (e) {
-        console.error('QR-virhe:', e);
+      // QR-koodi vain kerran
+      if (!$('qr-container').hasChildNodes()) {
+        try {
+          new QRCode($('qr-container'), {
+            text: link,
+            width: 200,
+            height: 200,
+            colorDark: '#1a365d',
+            colorLight: '#ffffff',
+            correctLevel: QRCode.CorrectLevel.H
+          });
+        } catch (e) {
+          console.error('QR-virhe:', e);
+        }
       }
 
-      listenEvent(eventId, (data) => {
+      listenEvent(currentEventId, (data) => {
+        if (!data) {
+          alert('Tapahtuma on poistettu.');
+          window.location.href = window.location.pathname;
+          return;
+        }
         currentEventData = data;
         renderEventView(data);
       });
@@ -428,7 +489,7 @@
         roundDiv.innerHTML = `<strong>Erä ${rIdx + 1}</strong>`;
         let anyResult = false;
         (data.courts || []).forEach(court => {
-          const result = round.results ? round.results[court.courtIndex] : null;
+          const result = round?.results?.[court.courtIndex];
           if (result) {
             anyResult = true;
             roundDiv.innerHTML += `<div class="round-row done">
@@ -445,22 +506,38 @@
       $('btnNextRound').classList.toggle('hidden', !isCycleComplete(data));
     }
 
-    function initPlayerView(eventId) {
+    // ============================================================
+    // PELAAJANÄKYMÄ
+    // ============================================================
+    function goToPlayerView(showBack) {
       showView('view-player');
-      loadEvent(eventId).then(data => {
+      $('btnPlayerBack').classList.toggle('hidden', !showBack);
+      $('playerError').classList.add('hidden');
+      $('playerMsg').classList.add('hidden');
+
+      if (!currentEventId) return;
+
+      listenEvent(currentEventId, (data) => {
         if (!data) {
           $('playerError').textContent = 'Tapahtumaa ei löytynyt.';
           $('playerError').classList.remove('hidden');
+          $('courtSelect').innerHTML = '';
+          $('playerScoreForm').innerHTML = '';
+          $('btnSubmitScores').classList.add('hidden');
           return;
         }
         currentEventData = data;
-        currentEventId = eventId;
-        listenEvent(eventId, (d) => {
-          currentEventData = d;
-          populateCourtSelect(d);
-        });
         populateCourtSelect(data);
       });
+    }
+
+    function getSavedCourt(eventId) {
+      const v = localStorage.getItem('court_' + eventId);
+      return v !== null ? parseInt(v) : null;
+    }
+
+    function saveCourt(eventId, courtIndex) {
+      localStorage.setItem('court_' + eventId, String(courtIndex));
     }
 
     function populateCourtSelect(data) {
@@ -469,59 +546,81 @@
       select.innerHTML = '';
       (data.courts || []).forEach(court => {
         const opt = document.createElement('option');
-        opt.value = court.courtIndex;
+        opt.value = String(court.courtIndex);
         opt.textContent = `Kenttä ${court.courtNumber}: ${court.team1.join(' & ')} vs ${court.team2.join(' & ')}` +
           (court.resting ? ` (lepo: ${court.resting})` : '');
         select.appendChild(opt);
       });
+
+      // Valitse kenttä: 1) aiempi valinta, 2) localStorage, 3) ensimmäinen
+      let targetVal = null;
       if (prevVal && [...select.options].some(o => o.value === prevVal)) {
-        select.value = prevVal;
+        targetVal = prevVal;
+      } else {
+        const saved = getSavedCourt(currentEventId);
+        if (saved !== null && [...select.options].some(o => o.value === String(saved))) {
+          targetVal = String(saved);
+        } else if (data.courts && data.courts.length > 0) {
+          targetVal = String(data.courts[0].courtIndex);
+        }
       }
-      select.onchange = () => renderScoreForm(currentEventData, parseInt(select.value));
-      if (data.courts && data.courts.length > 0) {
-        renderScoreForm(data, parseInt(select.value || data.courts[0].courtIndex));
+      if (targetVal !== null) select.value = targetVal;
+
+      select.onchange = () => {
+        const idx = parseInt(select.value);
+        saveCourt(currentEventId, idx);
+        renderScoreForm(currentEventData, idx);
+      };
+
+      if (targetVal !== null) {
+        renderScoreForm(data, parseInt(targetVal));
       }
     }
 
     function renderScoreForm(data, courtIndex) {
-      const court = data.courts.find(c => c.courtIndex === courtIndex);
-      if (!court) return;
       const formDiv = $('playerScoreForm');
       formDiv.innerHTML = '';
 
-      $('playerMsg').classList.add('hidden');
-      $('playerError').classList.add('hidden');
+      const court = (data.courts || []).find(c => c.courtIndex === courtIndex);
+      if (!court) {
+        formDiv.innerHTML = '<p class="error">Kenttää ei löytynyt.</p>';
+        $('btnSubmitScores').classList.add('hidden');
+        return;
+      }
 
+      // Löydä ensimmäinen erä, jolla ei ole tulosta tälle kentälle
       let targetRound = -1;
       for (let r = 0; r < 3; r++) {
-        if (!data.rounds[r].results[courtIndex]) {
+        if (!getCourtResult(data, r, courtIndex)) {
           targetRound = r;
           break;
         }
       }
 
+      // Erälista
       for (let r = 0; r < 3; r++) {
-        const result = data.rounds[r].results[courtIndex];
+        const result = getCourtResult(data, r, courtIndex);
         const div = document.createElement('div');
-        div.className = 'round-row ' + (result ? 'done' : 'pending');
         if (result) {
+          div.className = 'round-row done';
           div.innerHTML = `<strong>Erä ${r + 1}:</strong> ${court.team1.join(' & ')} <strong>${result.team1Score}–${result.team2Score}</strong> ${court.team2.join(' & ')} <span style="color:#38a169;">✓</span>`;
         } else if (r === targetRound) {
+          div.className = 'round-row pending';
           div.innerHTML = `<strong>Erä ${r + 1}:</strong> syötä alla`;
         } else {
-          div.innerHTML = `<strong>Erä ${r + 1}:</strong> <span class="muted">odottaa</span>`;
+          div.className = 'round-row waiting';
+          div.innerHTML = `<strong>Erä ${r + 1}:</strong> odottaa edellisiä`;
         }
         formDiv.appendChild(div);
       }
 
       if (targetRound === -1) {
-        formDiv.innerHTML += `<div class="success-box">Tämän kentän kaikki 3 erää on syötetty. Kiitos!</div>`;
+        formDiv.innerHTML += `<div class="success-box" style="margin-top:12px;">Tämän kentän kaikki 3 erää on syötetty. Kiitos!</div>`;
         $('btnSubmitScores').classList.add('hidden');
         return;
       }
 
-      $('btnSubmitScores').classList.remove('hidden');
-
+      // Syöttölomake
       const form = document.createElement('div');
       form.style.marginTop = '12px';
       form.innerHTML = `
@@ -536,10 +635,14 @@
       `;
       formDiv.appendChild(form);
 
-      $('btnSubmitScores').onclick = async () => {
+      $('btnSubmitScores').classList.remove('hidden');
+      $('playerError').classList.add('hidden');
+
+      const btn = $('btnSubmitScores');
+      btn.onclick = async () => {
         const s1 = parseInt($('score1').value);
         const s2 = parseInt($('score2').value);
-        if (isNaN(s1) || isNaN(s2) || s1 < 0 || s2 < 0) {
+        if (isNaN(s1) || isNaN(s2) || s1 < 0 || s2 < 0 || s1 > 99 || s2 > 99) {
           $('playerError').textContent = 'Syötä molemmat pisteet (0–99).';
           $('playerError').classList.remove('hidden');
           return;
@@ -549,36 +652,41 @@
           $('playerError').classList.remove('hidden');
           return;
         }
-        $('playerError').classList.add('hidden');
+
+        btn.disabled = true;
+        btn.textContent = 'Tallennetaan...';
 
         try {
-          const eventRef = ref(db, 'events/' + currentEventId);
-          const snapshot = await get(eventRef);
-          if (!snapshot.exists()) throw new Error('Tapahtuma ei löydy.');
-          const eventData = snapshot.val();
-
-          if (eventData.rounds[targetRound].results[courtIndex]) {
-            throw new Error('Tämän erän tulokset on jo syötetty. Päivitä sivu.');
+          // Tarkista ettei tulos ole jo olemassa (TOCTOU-suoja)
+          const checkRef = ref(db, `events/${currentEventId}/rounds/${targetRound}/results/${courtIndex}`);
+          const existing = await get(checkRef);
+          if (existing.exists()) {
+            throw new Error('Tämän erän tulokset on jo syötetty toisaalta. Päivitä näkymä.');
           }
 
-          eventData.rounds[targetRound].results[courtIndex] = {
+          // Kohdennettu kirjoitus — ei ylikirjoita muiden kenttien tuloksia
+          await set(checkRef, {
             team1Score: s1,
             team2Score: s2,
             timestamp: new Date().toISOString()
-          };
+          });
 
-          await update(eventRef, { rounds: eventData.rounds });
-
+          $('playerError').classList.add('hidden');
           $('playerMsg').textContent = `Erä ${targetRound + 1} tallennettu!`;
           $('playerMsg').classList.remove('hidden');
-          $('btnSubmitScores').classList.add('hidden');
+          setTimeout(() => $('playerMsg').classList.add('hidden'), 3000);
         } catch (e) {
           $('playerError').textContent = 'Virhe: ' + e.message;
           $('playerError').classList.remove('hidden');
+          btn.disabled = false;
+          btn.textContent = 'Tallenna tulokset';
         }
       };
     }
 
+    // ============================================================
+    // SIJOITUKSET
+    // ============================================================
     function showStandings() {
       if (!currentEventData) return;
       showView('view-standings');
@@ -613,6 +721,11 @@
       container.innerHTML = html;
     }
 
+    // ============================================================
+    // NAPIT
+    // ============================================================
+
+    // --- Luo tapahtuma ---
     $('btnCreate').addEventListener('click', async () => {
       const raw = $('playerNames').value.trim();
       const names = raw.split('\n').map(s => s.trim()).filter(s => s.length > 0);
@@ -631,16 +744,45 @@
       try {
         const eventId = await createEvent(names);
         currentEventId = eventId;
-        isOrganizer = true;
         localStorage.setItem('organizer_' + eventId, 'true');
         history.replaceState({}, '', window.location.pathname + '?event=' + eventId);
-        initEventView(eventId);
+        goToEventView();
       } catch (e) {
         $('setupError').textContent = 'Virhe: ' + e.message;
         $('setupError').classList.remove('hidden');
       }
     });
 
+    // --- Liity koodilla ---
+    $('joinCode').addEventListener('input', (e) => {
+      e.target.value = e.target.value.toUpperCase();
+    });
+
+    $('btnJoin').addEventListener('click', async () => {
+      const raw = $('joinCode').value.trim();
+      if (!raw) {
+        $('joinError').textContent = 'Syötä tapahtuman koodi.';
+        $('joinError').classList.remove('hidden');
+        return;
+      }
+      // Palauta oikea muoto: padel-XXXXXXXX
+      const code = normalizeCode(raw);
+      $('joinError').classList.add('hidden');
+      try {
+        const data = await loadEvent(code);
+        if (!data) {
+          $('joinError').textContent = 'Tapahtumaa ei löytynyt koodilla ' + raw;
+          $('joinError').classList.remove('hidden');
+          return;
+        }
+        window.location.href = window.location.pathname + '?event=' + encodeURIComponent(code);
+      } catch (e) {
+        $('joinError').textContent = 'Virhe: ' + e.message;
+        $('joinError').classList.remove('hidden');
+      }
+    });
+
+    // --- Kopioi tunniste ---
     $('btnCopyId').addEventListener('click', () => {
       navigator.clipboard.writeText(currentEventId || '').then(() => {
         $('copyMsg').classList.remove('hidden');
@@ -648,15 +790,36 @@
       });
     });
 
+    // --- Syötä tuloksia (järjestäjänäkymästä pelaajanäkymään) ---
+    $('btnEnterScores').addEventListener('click', () => {
+      goToPlayerView(true);
+    });
+
+    // --- Takaisin tapahtumaan (pelaajanäkymästä) ---
+    $('btnPlayerBack').addEventListener('click', () => {
+      goToEventView();
+    });
+
+    // --- Laske kierros ---
     $('btnNextRound').addEventListener('click', () => {
+      if (!isCycleComplete(currentEventData)) {
+        alert('Kaikkia tuloksia ei ole vielä syötetty.');
+        return;
+      }
       showStandings();
     });
 
+    // --- Vahvista nousut/laskut ---
     $('btnApplyPromotions').addEventListener('click', async () => {
       if (!currentEventData) return;
+      if (!isCycleComplete(currentEventData)) {
+        alert('Kierros ei ole vielä valmis.');
+        return;
+      }
+
       const standings = computeStandings(currentEventData);
       const newOrder = standings.map(s => s.name);
-      const prevRestRotations = currentEventData.courts.map(c => c.restRotation || 0);
+      const prevRestRotations = (currentEventData.courts || []).map(c => c.restRotation || 0);
 
       let newCourts;
       try {
@@ -676,38 +839,49 @@
         ]
       };
 
-      await update(ref(db, 'events/' + currentEventId), updatedData);
-      showView('view-event');
-      $('btnNextRound').classList.add('hidden');
+      try {
+        await set(ref(db, 'events/' + currentEventId + '/courts'), newCourts);
+        await set(ref(db, 'events/' + currentEventId + '/rounds'), updatedData.rounds);
+        goToEventView();
+      } catch (e) {
+        alert('Virhe tallennuksessa: ' + e.message);
+      }
     });
 
     $('btnBackToEvent').addEventListener('click', () => {
-      showView('view-event');
+      goToEventView();
     });
 
     $('btnReset').addEventListener('click', () => {
-      if (!confirm('Haluatko keskeyttää tapahtuman? Tapahtuma poistuu tästä laitteesta, mutta tiedot jäävät palvelimelle.')) return;
+      if (!confirm('Haluatko keskeyttää tapahtuman? Tiedot jäävät palvelimelle, mutta poistut tästä näkymästä.')) return;
       if (unsubscribeEvent) { unsubscribeEvent(); unsubscribeEvent = null; }
+      if (currentEventId) {
+        localStorage.removeItem('organizer_' + currentEventId);
+        localStorage.removeItem('court_' + currentEventId);
+      }
       currentEventId = null;
       currentEventData = null;
-      isOrganizer = false;
       history.replaceState({}, '', window.location.pathname);
       $('playerNames').value = '';
+      $('joinCode').value = '';
+      $('qr-container').innerHTML = '';
       showView('view-setup');
     });
 
+    // ============================================================
+    // KÄYNNISTYS
+    // ============================================================
     (function init() {
       const params = new URLSearchParams(window.location.search);
       const eventId = params.get('event');
 
       if (eventId) {
+        currentEventId = eventId;
         const orgFlag = localStorage.getItem('organizer_' + eventId) === 'true';
         if (orgFlag) {
-          isOrganizer = true;
-          currentEventId = eventId;
-          initEventView(eventId);
+          goToEventView();
         } else {
-          initPlayerView(eventId);
+          goToPlayerView(false);
         }
       } else {
         showView('view-setup');
