@@ -65,6 +65,8 @@
     .round-row.waiting { background: #f7fafc; border-left: 3px solid #cbd5e0; color: #718096; }
     .muted { color: #718096; font-size: 0.8rem; }
     .divider { height: 1px; background: #e2e8f0; margin: 16px 0; }
+    .history-court { background: #ebf8ff; border-left: 4px solid #2c5282; padding: 12px; border-radius: 8px; margin-bottom: 12px; }
+    .history-court-title { font-weight: 700; font-size: 1rem; margin-bottom: 4px; color: #2c5282; }
   </style>
 </head>
 <body>
@@ -114,6 +116,7 @@
     <p id="copyMsg" class="success hidden">Kopioitu!</p>
 
     <button id="btnEnterScores" class="secondary">✏️ Syötä tuloksia (järjestäjä)</button>
+    <button id="btnShowHistory" class="secondary hidden">📊 Näytä edellisen kierroksen tulokset</button>
 
     <h2>Kentät ja pelaajat</h2>
     <div id="courtsContainer"></div>
@@ -148,6 +151,13 @@
     <button id="btnBackToEvent" class="secondary" style="margin-top:10px;">Takaisin muuttamatta</button>
   </div>
 
+  <!-- ========== NÄKYMÄ: EDELLISEN KIERROKSEN TULOKSET ========== -->
+  <div id="view-history" class="card hidden">
+    <h2>Edellisen kierroksen tulokset</h2>
+    <div id="historyContainer"></div>
+    <button id="btnBackFromHistory" class="secondary" style="margin-top:16px;">← Takaisin tapahtumaan</button>
+  </div>
+
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
 
   <script type="module">
@@ -179,7 +189,7 @@
     // APUFUNKTIOT
     // ============================================================
     function showView(viewId) {
-      ['view-setup', 'view-event', 'view-player', 'view-standings'].forEach(v => {
+      ['view-setup', 'view-event', 'view-player', 'view-standings', 'view-history'].forEach(v => {
         $(v).classList.add('hidden');
       });
       $(viewId).classList.remove('hidden');
@@ -203,6 +213,12 @@
       const round = eventData?.rounds?.[roundIdx];
       if (!round || !round.results) return null;
       return round.results[courtIndex] || null;
+    }
+
+    function formatTimestamp(iso) {
+      try {
+        return new Date(iso).toLocaleString('fi-FI');
+      } catch { return String(iso); }
     }
 
     // ============================================================
@@ -428,7 +444,6 @@
     // ============================================================
     function goToEventView() {
       showView('view-event');
-      $('btnPlayerBack').classList.add('hidden');
 
       if (!currentEventId) return;
 
@@ -436,7 +451,6 @@
       const link = window.location.origin + window.location.pathname + '?event=' + currentEventId;
       $('shareLink').value = link;
 
-      // QR-koodi vain kerran
       if (!$('qr-container').hasChildNodes()) {
         try {
           new QRCode($('qr-container'), {
@@ -504,6 +518,145 @@
       });
 
       $('btnNextRound').classList.toggle('hidden', !isCycleComplete(data));
+      $('btnShowHistory').classList.toggle('hidden', !data.previousCycle);
+    }
+
+    // ============================================================
+    // EDELLISEN KIERROKSEN NÄKYMÄ
+    // ============================================================
+    function goToHistoryView() {
+      if (!currentEventData || !currentEventData.previousCycle) {
+        goToEventView();
+        return;
+      }
+      showView('view-history');
+      renderHistoryView();
+    }
+
+    function renderHistoryView() {
+      const prev = currentEventData?.previousCycle;
+      if (!prev) {
+        goToEventView();
+        return;
+      }
+
+      // Kartoitetaan pelaajien nykyiset kentät
+      const currentCourtOf = {};
+      (currentEventData.courts || []).forEach(c => {
+        (c.players || []).forEach(p => { currentCourtOf[p] = c.courtNumber; });
+      });
+
+      const container = $('historyContainer');
+      container.innerHTML = '';
+
+      // Otsikko / aikaleima
+      const header = document.createElement('div');
+      header.className = 'info-box';
+      header.innerHTML = `
+        <div><strong>Kierros valmistui:</strong> ${prev.completedAt ? formatTimestamp(prev.completedAt) : '–'}</div>
+        <div class="muted" style="margin-top:4px;">
+          Alla on päättyneen 3 erän kierroksen kenttäkohtaiset tulokset sekä pelaajien siirtymiset uusille kentille.
+        </div>
+      `;
+      container.appendChild(header);
+
+      // Kenttäkohtaiset tulokset
+      (prev.courts || []).forEach(court => {
+        const courtDiv = document.createElement('div');
+        courtDiv.className = 'history-court';
+
+        let html = `<div class="history-court-title">Kenttä ${court.courtNumber} (edellinen)</div>`;
+        html += `<div class="player-list" style="margin-bottom:8px;">
+          ${(court.team1 || []).join(' & ')}
+          <span class="muted"> vs </span>
+          ${(court.team2 || []).join(' & ')}
+          ${court.resting ? `<span class="tag">Lepo: ${court.resting}</span>` : ''}
+        </div>`;
+
+        // Erätulokset
+        html += `<div style="margin-bottom:8px;">
+          <strong style="font-size:0.85rem; color:#4a5568;">Erätulokset:</strong>`;
+        let anyRound = false;
+        for (let r = 0; r < 3; r++) {
+          const result = prev.rounds?.[r]?.results?.[court.courtIndex];
+          if (result) {
+            anyRound = true;
+            html += `<div class="round-row done">Erä ${r + 1}: <strong>${result.team1Score}–${result.team2Score}</strong></div>`;
+          }
+        }
+        if (!anyRound) {
+          html += `<div class="muted">Ei tuloksia</div>`;
+        }
+        html += `</div>`;
+
+        // Pelaajien siirrot
+        html += `<div style="margin-top:8px;">
+          <strong style="font-size:0.85rem; color:#4a5568;">Pelaajien siirrot:</strong>
+        </div>`;
+        (court.players || []).forEach(p => {
+          const oldCourt = court.courtNumber;
+          const newCourt = currentCourtOf[p];
+          let badge;
+          if (newCourt === undefined) {
+            badge = `<span class="muted">ei enää mukana</span>`;
+          } else if (newCourt < oldCourt) {
+            badge = `<span class="badge-up">▲ → Kenttä ${newCourt}</span>`;
+          } else if (newCourt > oldCourt) {
+            badge = `<span class="badge-down">▼ → Kenttä ${newCourt}</span>`;
+          } else {
+            badge = `<span class="muted">→ Kenttä ${newCourt} (pysyi)</span>`;
+          }
+          html += `<div class="round-row">${p}: ${badge}</div>`;
+        });
+
+        courtDiv.innerHTML = html;
+        container.appendChild(courtDiv);
+      });
+
+      // Yhteenvetotaulukko siirroista
+      const summaryDiv = document.createElement('div');
+      summaryDiv.style.marginTop = '12px';
+      summaryDiv.innerHTML = `<h2>Yhteenveto siirroista</h2>`;
+
+      const movements = [];
+      (prev.courts || []).forEach(court => {
+        (court.players || []).forEach(p => {
+          movements.push({
+            name: p,
+            oldCourt: court.courtNumber,
+            newCourt: currentCourtOf[p]
+          });
+        });
+      });
+      movements.sort((a, b) => {
+        if (a.oldCourt !== b.oldCourt) return a.oldCourt - b.oldCourt;
+        return a.name.localeCompare(b.name, 'fi');
+      });
+
+      let tableHtml = `<table class="standings-table">
+        <tr><th>Pelaaja</th><th>Vanha</th><th>Uusi</th><th>Muutos</th></tr>`;
+      movements.forEach(m => {
+        let change;
+        if (m.newCourt === undefined) {
+          change = '<span class="muted">–</span>';
+        } else if (m.newCourt < m.oldCourt) {
+          change = `<span class="badge-up">▲ ${m.oldCourt - m.newCourt} ylös</span>`;
+        } else if (m.newCourt > m.oldCourt) {
+          change = `<span class="badge-down">▼ ${m.newCourt - m.oldCourt} alas</span>`;
+        } else {
+          change = '<span class="muted">– pysyi</span>';
+        }
+        tableHtml += `<tr>
+          <td>${m.name}</td>
+          <td>K${m.oldCourt}</td>
+          <td>${m.newCourt !== undefined ? 'K' + m.newCourt : '–'}</td>
+          <td>${change}</td>
+        </tr>`;
+      });
+      tableHtml += `</table>`;
+
+      summaryDiv.innerHTML += tableHtml;
+      container.appendChild(summaryDiv);
     }
 
     // ============================================================
@@ -552,7 +705,6 @@
         select.appendChild(opt);
       });
 
-      // Valitse kenttä: 1) aiempi valinta, 2) localStorage, 3) ensimmäinen
       let targetVal = null;
       if (prevVal && [...select.options].some(o => o.value === prevVal)) {
         targetVal = prevVal;
@@ -588,7 +740,6 @@
         return;
       }
 
-      // Löydä ensimmäinen erä, jolla ei ole tulosta tälle kentälle
       let targetRound = -1;
       for (let r = 0; r < 3; r++) {
         if (!getCourtResult(data, r, courtIndex)) {
@@ -597,7 +748,6 @@
         }
       }
 
-      // Erälista
       for (let r = 0; r < 3; r++) {
         const result = getCourtResult(data, r, courtIndex);
         const div = document.createElement('div');
@@ -620,7 +770,6 @@
         return;
       }
 
-      // Syöttölomake
       const form = document.createElement('div');
       form.style.marginTop = '12px';
       form.innerHTML = `
@@ -639,6 +788,8 @@
       $('playerError').classList.add('hidden');
 
       const btn = $('btnSubmitScores');
+      btn.disabled = false;
+      btn.textContent = 'Tallenna tulokset';
       btn.onclick = async () => {
         const s1 = parseInt($('score1').value);
         const s2 = parseInt($('score2').value);
@@ -657,14 +808,12 @@
         btn.textContent = 'Tallennetaan...';
 
         try {
-          // Tarkista ettei tulos ole jo olemassa (TOCTOU-suoja)
           const checkRef = ref(db, `events/${currentEventId}/rounds/${targetRound}/results/${courtIndex}`);
           const existing = await get(checkRef);
           if (existing.exists()) {
             throw new Error('Tämän erän tulokset on jo syötetty toisaalta. Päivitä näkymä.');
           }
 
-          // Kohdennettu kirjoitus — ei ylikirjoita muiden kenttien tuloksia
           await set(checkRef, {
             team1Score: s1,
             team2Score: s2,
@@ -725,7 +874,6 @@
     // NAPIT
     // ============================================================
 
-    // --- Luo tapahtuma ---
     $('btnCreate').addEventListener('click', async () => {
       const raw = $('playerNames').value.trim();
       const names = raw.split('\n').map(s => s.trim()).filter(s => s.length > 0);
@@ -753,7 +901,6 @@
       }
     });
 
-    // --- Liity koodilla ---
     $('joinCode').addEventListener('input', (e) => {
       e.target.value = e.target.value.toUpperCase();
     });
@@ -765,7 +912,6 @@
         $('joinError').classList.remove('hidden');
         return;
       }
-      // Palauta oikea muoto: padel-XXXXXXXX
       const code = normalizeCode(raw);
       $('joinError').classList.add('hidden');
       try {
@@ -782,7 +928,6 @@
       }
     });
 
-    // --- Kopioi tunniste ---
     $('btnCopyId').addEventListener('click', () => {
       navigator.clipboard.writeText(currentEventId || '').then(() => {
         $('copyMsg').classList.remove('hidden');
@@ -790,17 +935,22 @@
       });
     });
 
-    // --- Syötä tuloksia (järjestäjänäkymästä pelaajanäkymään) ---
     $('btnEnterScores').addEventListener('click', () => {
       goToPlayerView(true);
     });
 
-    // --- Takaisin tapahtumaan (pelaajanäkymästä) ---
+    $('btnShowHistory').addEventListener('click', () => {
+      goToHistoryView();
+    });
+
+    $('btnBackFromHistory').addEventListener('click', () => {
+      goToEventView();
+    });
+
     $('btnPlayerBack').addEventListener('click', () => {
       goToEventView();
     });
 
-    // --- Laske kierros ---
     $('btnNextRound').addEventListener('click', () => {
       if (!isCycleComplete(currentEventData)) {
         alert('Kaikkia tuloksia ei ole vielä syötetty.');
@@ -809,7 +959,6 @@
       showStandings();
     });
 
-    // --- Vahvista nousut/laskut ---
     $('btnApplyPromotions').addEventListener('click', async () => {
       if (!currentEventData) return;
       if (!isCycleComplete(currentEventData)) {
@@ -829,20 +978,36 @@
         return;
       }
 
-      const updatedData = {
-        ...currentEventData,
-        courts: newCourts,
-        rounds: [
-          { roundIndex: 0, results: {} },
-          { roundIndex: 1, results: {} },
-          { roundIndex: 2, results: {} }
-        ]
+      const previousCycle = {
+        courts: currentEventData.courts,
+        rounds: currentEventData.rounds,
+        standings: standings,
+        completedAt: new Date().toISOString()
       };
 
+      const newRounds = [
+        { roundIndex: 0, results: {} },
+        { roundIndex: 1, results: {} },
+        { roundIndex: 2, results: {} }
+      ];
+
       try {
-        await set(ref(db, 'events/' + currentEventId + '/courts'), newCourts);
-        await set(ref(db, 'events/' + currentEventId + '/rounds'), updatedData.rounds);
-        goToEventView();
+        // Yksi atomimainen monipolkuinen päivitys
+        const updates = {};
+        updates[`events/${currentEventId}/previousCycle`] = previousCycle;
+        updates[`events/${currentEventId}/courts`] = newCourts;
+        updates[`events/${currentEventId}/rounds`] = newRounds;
+        await update(ref(db), updates);
+
+        // Päivitä paikallinen tila välittömästi, jotta historia-näkymä toimii
+        currentEventData = {
+          ...currentEventData,
+          previousCycle,
+          courts: newCourts,
+          rounds: newRounds
+        };
+
+        goToHistoryView();
       } catch (e) {
         alert('Virhe tallennuksessa: ' + e.message);
       }
