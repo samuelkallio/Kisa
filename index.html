@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Padel 3 Erää</title>
+  <title>3 Erää</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -43,9 +43,10 @@
       background: #ebf8ff; border-left: 4px solid #3182ce;
       padding: 12px; border-radius: 8px; margin-bottom: 10px;
     }
+    .court-card.rest-court { background: #fefcbf; border-left-color: #ed8936; }
     .court-title { font-weight: 700; font-size: 1rem; margin-bottom: 6px; }
-    .player-list { font-size: 0.9rem; line-height: 1.6; }
     .tag { display: inline-block; background: #bee3f8; padding: 1px 6px; border-radius: 4px; font-size: 0.75rem; margin-left: 4px; }
+    .tag.rest { background: #fbd38d; }
     .score-row { display: flex; gap: 8px; align-items: center; margin: 8px 0; }
     .score-row input { width: 70px; text-align: center; }
     .score-row span { font-weight: 600; }
@@ -71,12 +72,17 @@
     .round-block.pending { background: #fffaf0; }
     .history-court { background: #ebf8ff; border-left: 4px solid #2c5282; padding: 12px; border-radius: 8px; margin-bottom: 12px; }
     .history-court-title { font-weight: 700; font-size: 1rem; margin-bottom: 4px; color: #2c5282; }
+    .arrow-up { color: #38a169; font-weight: 700; }
+    .arrow-down { color: #e53e3e; font-weight: 700; }
+    .arrow-stay { color: #718096; }
+    .big-court { font-size: 1.4rem; font-weight: 700; color: #2c5282; margin: 8px 0; }
+    .code-display { font-family: monospace; font-size: 1.6rem; letter-spacing: 4px; font-weight: 700; color: #2c5282; text-align: center; padding: 8px; background: #ebf8ff; border-radius: 8px; }
   </style>
 </head>
 <body>
 
-  <h1>🎾 Padel 3 Erää</h1>
-  <p class="sub">Voitto-osuus → piste-eron keskiarvo → painotetut erät</p>
+  <h1>🎾 3 Erää</h1>
+  <p class="sub">Voitto-osuus → eräpiste-eron ka. → painotetut erät</p>
 
   <!-- ========== NÄKYMÄ: ALUSTUS ========== -->
   <div id="view-setup" class="card">
@@ -84,40 +90,39 @@
     <label>Pelaajien nimet (yksi per rivi, taitotason mukaan ylhäältä alas)</label>
     <textarea id="playerNames" rows="8" placeholder="Pelaaja 1&#10;Pelaaja 2&#10;Pelaaja 3&#10;Pelaaja 4&#10;Pelaaja 5&#10;Pelaaja 6&#10;Pelaaja 7&#10;Pelaaja 8"></textarea>
     <div class="info-box">
-      Kentät muodostetaan automaattisesti. 5 pelaajan kentät ovat alimpina. 5 pelaajan kentällä lepo kiertää.
-      Sallitut pelaajamäärät: 4, 5, 8, 9, 10 tai vähintään 12.
+      Kentät muodostetaan automaattisesti. 5 pelaajan kentät ovat alimpina ja taukovuoro kiertää ylös-alas.
+      Sallitut pelaajamäärät: 4, 5, 8, 9, 10 tai vähintään 12 pelaajaa.
     </div>
-    <button id="btnCreate">Luo tapahtuma ja kentät</button>
+    <button id="btnCreate">Luo tapahtuma</button>
     <p id="setupError" class="error hidden"></p>
 
     <div class="divider"></div>
 
     <h2>Liity tapahtumaan</h2>
-    <label>Tapahtuman koodi</label>
-    <input id="joinCode" type="text" placeholder="padel-XXXXXXXX" autocapitalize="off" autocorrect="off" spellcheck="false">
+    <label>Tapahtuman koodi (5 merkkiä)</label>
+    <input id="joinCode" type="text" placeholder="Esim. A3K7Q" maxlength="20" autocapitalize="characters" autocorrect="off" spellcheck="false" style="text-transform: uppercase; letter-spacing: 2px; font-family: monospace; font-size: 1.1rem;">
     <button id="btnJoin" class="secondary">Liity koodilla</button>
     <p id="joinError" class="error hidden"></p>
   </div>
 
-  <!-- ========== NÄKYMÄ: TAPAHTUMA (JÄRJESTÄJÄ) ========== -->
+  <!-- ========== NÄKYMÄ: TAPAHTUMA ========== -->
   <div id="view-event" class="card hidden">
     <h2>Tapahtuma käynnissä</h2>
-    <div class="row">
-      <div>
-        <label>Tapahtuman tunniste</label>
-        <input id="eventIdDisplay" type="text" readonly>
-      </div>
-      <div style="flex:0 0 auto; display:flex; align-items:flex-end;">
-        <button id="btnCopyId" class="secondary" style="width:auto; margin:0;">Kopioi</button>
-      </div>
-    </div>
+
+    <label>Tapahtuman koodi</label>
+    <div class="code-display" id="eventIdDisplay">-----</div>
+    <button id="btnCopyId" class="secondary" style="margin-top:4px;">Kopioi koodi</button>
+    <p id="copyMsg" class="success hidden">Kopioitu!</p>
+
     <div class="info-box">
-      Jaa QR-koodi tai linkki pelaajille. Pelaajat avaavat linkin ja syöttävät tuloksia omalta kentältään.
+      Jaa QR-koodi tai koodi pelaajille. Pelaajat avaavat linkin ja syöttävät tuloksia omalta kentältään.
     </div>
     <div id="qr-container"></div>
     <label>Linkki pelaajille</label>
     <input id="shareLink" type="text" readonly>
-    <p id="copyMsg" class="success hidden">Kopioitu!</p>
+
+    <div id="roundStatus" class="info-box hidden"></div>
+    <div id="restStatus" class="info-box hidden"></div>
 
     <button id="btnEnterScores" class="secondary">✏️ Syötä tuloksia (järjestäjä)</button>
     <button id="btnShowHistory" class="secondary hidden">📊 Näytä edellisen kierroksen tulokset</button>
@@ -129,30 +134,49 @@
     <button id="btnReset" class="danger" style="margin-top:16px;">Keskeytä tapahtuma</button>
   </div>
 
+  <!-- ========== NÄKYMÄ: KUKA OLET ========== -->
+  <div id="view-player-identify" class="card hidden">
+    <h2>Kuka olet?</h2>
+    <p class="sub">Valitse nimesi pelaajalistalta, niin näet oman kenttäsi.</p>
+    <label>Nimesi</label>
+    <select id="playerIdentifySelect">
+      <option value="">-- Valitse nimesi --</option>
+    </select>
+    <button id="btnIdentifyConfirm">Jatka</button>
+    <p id="identifyError" class="error hidden"></p>
+  </div>
+
   <!-- ========== NÄKYMÄ: PELAAJA ========== -->
   <div id="view-player" class="card hidden">
     <h2>Syötä tulokset</h2>
-    <p class="sub">Valitse kenttäsi ja syötä erien pisteet.</p>
 
     <button id="btnPlayerBack" class="secondary hidden">← Takaisin tapahtumaan</button>
 
+    <div id="myCourtBanner" class="info-box hidden"></div>
+
     <label>Kenttä</label>
     <select id="courtSelect"></select>
+    <div id="courtPlayersList" class="muted" style="margin:4px 0;"></div>
+
     <div id="playerScoreForm"></div>
     <p id="playerMsg" class="success hidden"></p>
     <p id="playerError" class="error hidden"></p>
     <button id="btnSubmitScores" class="hidden">Tallenna tulokset</button>
+
+    <div style="margin-top:16px; padding-top:12px; border-top: 1px solid #e2e8f0;">
+      <button id="btnSwitchPlayer" class="secondary hidden">Vaihda pelaaja</button>
+    </div>
   </div>
 
   <!-- ========== NÄKYMÄ: SIJOITUKSET ========== -->
   <div id="view-standings" class="card hidden">
-    <h2>3 erän kierroksen tulos</h2>
+    <h2>Kierroksen tulos</h2>
     <div id="standingsContainer"></div>
     <button id="btnApplyPromotions">Vahvista nousut ja laskut</button>
     <button id="btnBackToEvent" class="secondary" style="margin-top:10px;">Takaisin muuttamatta</button>
   </div>
 
-  <!-- ========== NÄKYMÄ: EDELLISEN KIERROKSEN TULOKSET ========== -->
+  <!-- ========== NÄKYMÄ: HISTORIA ========== -->
   <div id="view-history" class="card hidden">
     <h2>Edellisen kierroksen tulokset</h2>
     <div id="historyContainer"></div>
@@ -181,33 +205,39 @@
     const db = getDatabase(app);
 
     const $ = id => document.getElementById(id);
+    const MAX_POINT_DIFF = 5;
+    const ID_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Ei I, O, 0, 1
 
     let currentEventId = null;
     let currentEventData = null;
     let unsubscribeEvent = null;
+    let manualCourtOverride = null;
+    let lastCycleCount = 0;
 
     // ============================================================
     // APUFUNKTIOT
     // ============================================================
     function showView(viewId) {
-      ['view-setup', 'view-event', 'view-player', 'view-standings', 'view-history'].forEach(v => {
+      ['view-setup', 'view-event', 'view-player-identify', 'view-player', 'view-standings', 'view-history'].forEach(v => {
         $(v).classList.add('hidden');
       });
       $(viewId).classList.remove('hidden');
     }
 
     function generateId() {
-      return 'padel-' + Math.random().toString(36).substring(2, 10).toUpperCase();
+      let id = '';
+      for (let i = 0; i < 5; i++) {
+        id += ID_CHARS[Math.floor(Math.random() * ID_CHARS.length)];
+      }
+      return id;
     }
 
     function normalizeCode(input) {
-      const trimmed = String(input || '').trim();
-      if (!trimmed) return '';
-      const lower = trimmed.toLowerCase();
-      if (lower.startsWith('padel-')) {
-        return 'padel-' + trimmed.substring(6).toUpperCase();
-      }
-      return trimmed;
+      return String(input || '').trim().toUpperCase().replace(/\s+/g, '');
+    }
+
+    function capDiff(diff) {
+      return Math.sign(diff) * Math.min(MAX_POINT_DIFF, Math.abs(diff));
     }
 
     function getCourtResult(eventData, roundIdx, courtIndex) {
@@ -221,26 +251,47 @@
     }
 
     function formatTimestamp(iso) {
-      try {
-        return new Date(iso).toLocaleString('fi-FI');
-      } catch { return String(iso); }
+      try { return new Date(iso).toLocaleString('fi-FI'); } catch { return String(iso); }
+    }
+
+    function getPlayerName(eventId) {
+      return localStorage.getItem('playerName_' + eventId);
+    }
+
+    function copyToClipboard(text) {
+      if (navigator.clipboard && window.isSecureContext) {
+        return navigator.clipboard.writeText(text);
+      }
+      return new Promise((resolve, reject) => {
+        try {
+          const ta = document.createElement('textarea');
+          ta.value = text;
+          ta.style.position = 'fixed';
+          ta.style.opacity = '0';
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand('copy');
+          document.body.removeChild(ta);
+          resolve();
+        } catch (e) {
+          reject(e);
+        }
+      });
     }
 
     // ============================================================
     // ERÄKOHTAISTEN PARIEN GENEROINTI
-    // 4 pelaajaa: round-robin (jokainen pelaa kerran jokaisen kanssa)
-    // 5 pelaajaa: 3 erää, yksi lepää per erä, parit vaihtuvat
-    // restRotation kiertää lepoa eri pelaajille eri kierroksilla.
     // ============================================================
     function generateCourtRounds(players, restRotation = 0) {
       const n = players.length;
 
       if (n === 4) {
+        // Tasapainoisempi: vahvin+heikoin vs keskimmäiset ensimmäisellä erällä
         const [a, b, c, d] = players;
         return [
-          { roundIndex: 0, team1: [a, b], team2: [c, d], resting: null },
+          { roundIndex: 0, team1: [a, d], team2: [b, c], resting: null },
           { roundIndex: 1, team1: [a, c], team2: [b, d], resting: null },
-          { roundIndex: 2, team1: [a, d], team2: [b, c], resting: null }
+          { roundIndex: 2, team1: [a, b], team2: [c, d], resting: null }
         ];
       }
 
@@ -254,7 +305,6 @@
           { roundIndex: 2, team1: [p0, p2], team2: [p3, p4], resting: p1 }
         ];
       }
-
       return [];
     }
 
@@ -272,14 +322,12 @@
       const courtSizes = [];
       while (remaining > 0) {
         if (remaining % 4 === 0) {
-          courtSizes.push(4);
-          remaining -= 4;
+          courtSizes.push(4); remaining -= 4;
         } else {
-          courtSizes.push(5);
-          remaining -= 5;
+          courtSizes.push(5); remaining -= 5;
         }
       }
-      courtSizes.reverse();
+      courtSizes.reverse(); // alin = 5p
 
       const courts = [];
       let playerIdx = 0;
@@ -289,88 +337,182 @@
         const courtPlayers = playerNames.slice(playerIdx, playerIdx + size);
         playerIdx += size;
         const courtNumber = c + 1;
-        const prevRot = prevCourts[c]?.restRotation || 0;
-        const rounds = generateCourtRounds(courtPlayers, prevRot);
+        // 5p kentällä aloitus restRotation = 1 → keskimmäiset pelaajat saavat 3 peliä kierros 1:ssä
+        const initialRot = size === 5 ? 1 : 0;
+        const prevRot = prevCourts[c]?.restRotation ?? initialRot;
 
         courts.push({
           courtIndex: c,
           courtNumber,
           players: courtPlayers,
           restRotation: prevRot + 1,
-          rounds
+          rounds: generateCourtRounds(courtPlayers, prevRot)
         });
       }
       return courts;
     }
 
     // ============================================================
-    // NOUSU/LASKU-LOGIIKKA (paikallinen)
-    // Jokaiselta kentältä:
-    //  - paras nousee 1 tason ylös (paitsi ylin kenttä)
-    //  - huonoin laskee 1 tason alas (paitsi alin kenttä)
-    // Vierekkäiset kentät vaihtavat 1 pelaajan keskenään.
+    // NOUSU/LASKU
     // ============================================================
-    function computeNextCourts(oldCourts, standings) {
+    function count5pCourts(courts) {
+      return courts.filter(c => c.players.length === 5).length;
+    }
+
+    function findRestCourtIndex(courts) {
+      return courts.findIndex(c => c.players.length === 5);
+    }
+
+    function determineDirectionAfter(courts, oldDirection) {
+      const num5p = count5pCourts(courts);
+      if (num5p !== 1) return oldDirection;
+      const restIdx = findRestCourtIndex(courts);
+      if (restIdx === 0) return "down";
+      if (restIdx === courts.length - 1) return "up";
+      return oldDirection;
+    }
+
+    function computeNextCourts(oldCourts, standings, oldRestDirection) {
       const N = oldCourts.length;
 
-      // Yksittäinen kenttä — ei nousuja/laskuja, mutta lepo kiertää
       if (N <= 1) {
-        return oldCourts.map((c, i) => {
+        const court = oldCourts[0];
+        const currentRot = court.restRotation || 0;
+        return {
+          courts: [{
+            courtIndex: 0, courtNumber: 1,
+            players: [...court.players],
+            restRotation: currentRot + 1,
+            rounds: generateCourtRounds(court.players, currentRot)
+          }],
+          restDirection: oldRestDirection || "up"
+        };
+      }
+
+      // Jos kaikki kentät samankokoisia → globaali uudelleensijoitus
+      const sizes = oldCourts.map(c => c.players.length);
+      const allSameSize = sizes.every(s => s === sizes[0]);
+
+      if (allSameSize) {
+        const rank = {};
+        standings.forEach((s, i) => { rank[s.name] = i; });
+        const allPlayers = [];
+        oldCourts.forEach(c => c.players.forEach(p => allPlayers.push(p)));
+        allPlayers.sort((a, b) => (rank[a] ?? 999) - (rank[b] ?? 999));
+
+        const courtSize = sizes[0];
+        const newCourts = oldCourts.map((c, i) => {
+          const slice = allPlayers.slice(i * courtSize, (i + 1) * courtSize);
           const currentRot = c.restRotation || 0;
           return {
-            courtIndex: i,
-            courtNumber: i + 1,
-            players: [...c.players],
+            courtIndex: i, courtNumber: i + 1,
+            players: slice,
             restRotation: currentRot + 1,
-            rounds: generateCourtRounds(c.players, currentRot)
+            rounds: generateCourtRounds(slice, currentRot)
           };
         });
+        return { courts: newCourts, restDirection: oldRestDirection || "up" };
       }
+
+      // Yksi 5p-kenttä → rest-turn
+      const num5p = count5pCourts(oldCourts);
+      if (num5p === 1) {
+        return computeRestTurn(oldCourts, standings, oldRestDirection);
+      }
+
+      // Fallback
+      return {
+        courts: standardExchange(oldCourts, standings),
+        restDirection: oldRestDirection || "up"
+      };
+    }
+
+    function computeRestTurn(oldCourts, standings, oldRestDirection) {
+      const N = oldCourts.length;
+      const currentRest = findRestCourtIndex(oldCourts);
+      let direction = oldRestDirection || "up";
+      let nextRest;
+
+      if (direction === "up") {
+        if (currentRest > 0) nextRest = currentRest - 1;
+        else { nextRest = currentRest + 1; direction = "down"; }
+      } else {
+        if (currentRest < N - 1) nextRest = currentRest + 1;
+        else { nextRest = currentRest - 1; direction = "up"; }
+      }
+
+      const rank = {};
+      standings.forEach((s, i) => { rank[s.name] = i; });
+
+      const newPlayerLists = oldCourts.map(c => [...c.players]);
+
+      if (nextRest < currentRest) {
+        // YLÖS: 2 parasta nousee rest courtilta, 1 heikoin putoaa ylemmältä
+        const src = currentRest, tgt = nextRest;
+        const srcRanked = [...newPlayerLists[src]].sort((a, b) => (rank[a] ?? 999) - (rank[b] ?? 999));
+        const tgtRanked = [...newPlayerLists[tgt]].sort((a, b) => (rank[a] ?? 999) - (rank[b] ?? 999));
+        const rising2 = srcRanked.slice(0, 2);
+        const dropping1 = tgtRanked[tgtRanked.length - 1];
+        newPlayerLists[src] = newPlayerLists[src].filter(p => !rising2.includes(p));
+        newPlayerLists[tgt] = newPlayerLists[tgt].filter(p => p !== dropping1);
+        newPlayerLists[tgt].push(...rising2);
+        newPlayerLists[src].push(dropping1);
+      } else {
+        // ALAS: 2 heikointa putoaa rest courtilta, 1 paras nousee alemmalta
+        const src = currentRest, tgt = nextRest;
+        const srcRanked = [...newPlayerLists[src]].sort((a, b) => (rank[a] ?? 999) - (rank[b] ?? 999));
+        const tgtRanked = [...newPlayerLists[tgt]].sort((a, b) => (rank[a] ?? 999) - (rank[b] ?? 999));
+        const dropping2 = srcRanked.slice(-2);
+        const rising1 = tgtRanked[0];
+        newPlayerLists[src] = newPlayerLists[src].filter(p => !dropping2.includes(p));
+        newPlayerLists[tgt] = newPlayerLists[tgt].filter(p => p !== rising1);
+        newPlayerLists[tgt].push(...dropping2);
+        newPlayerLists[src].push(rising1);
+      }
+
+      const newCourts = newPlayerLists.map((players, i) => {
+        const currentRot = oldCourts[i].restRotation || 0;
+        return {
+          courtIndex: i, courtNumber: i + 1,
+          players,
+          restRotation: currentRot + 1,
+          rounds: generateCourtRounds(players, currentRot)
+        };
+      });
+
+      const newDirection = determineDirectionAfter(newCourts, direction);
+      return { courts: newCourts, restDirection: newDirection };
+    }
+
+    function standardExchange(oldCourts, standings) {
+      const N = oldCourts.length;
+      const rank = {};
+      standings.forEach((s, i) => { rank[s.name] = i; });
 
       const bests = new Array(N).fill(null);
       const worsts = new Array(N).fill(null);
 
       for (let i = 0; i < N; i++) {
-        const courtPlayers = oldCourts[i].players;
-        const ranked = courtPlayers
-          .map(p => ({ name: p, rank: standings.findIndex(s => s.name === p) }))
-          .filter(x => x.rank >= 0)
-          .sort((a, b) => a.rank - b.rank);
+        const ranked = [...oldCourts[i].players].sort((a, b) => (rank[a] ?? 999) - (rank[b] ?? 999));
         if (ranked.length === 0) continue;
-        bests[i] = ranked[0].name;
-        worsts[i] = ranked[ranked.length - 1].name;
+        bests[i] = ranked[0];
+        worsts[i] = ranked[ranked.length - 1];
       }
 
       const newPlayerLists = [];
       for (let i = 0; i < N; i++) {
         let list = [...oldCourts[i].players];
-
-        // Paras nousee ylös (paitsi ylin kenttä)
-        if (i > 0 && bests[i]) {
-          list = list.filter(p => p !== bests[i]);
-        }
-        // Huonoin laskee alas (paitsi alin kenttä)
-        if (i < N - 1 && worsts[i]) {
-          list = list.filter(p => p !== worsts[i]);
-        }
-
-        // Yläpuolelta putoava huonoin
-        if (i > 0 && worsts[i - 1]) {
-          list.push(worsts[i - 1]);
-        }
-        // Alapuolelta nouseva paras
-        if (i < N - 1 && bests[i + 1]) {
-          list.push(bests[i + 1]);
-        }
-
+        if (i > 0 && bests[i]) list = list.filter(p => p !== bests[i]);
+        if (i < N - 1 && worsts[i]) list = list.filter(p => p !== worsts[i]);
+        if (i > 0 && worsts[i - 1]) list.push(worsts[i - 1]);
+        if (i < N - 1 && bests[i + 1]) list.push(bests[i + 1]);
         newPlayerLists.push(list);
       }
 
       return newPlayerLists.map((players, i) => {
         const currentRot = oldCourts[i].restRotation || 0;
         return {
-          courtIndex: i,
-          courtNumber: i + 1,
+          courtIndex: i, courtNumber: i + 1,
           players,
           restRotation: currentRot + 1,
           rounds: generateCourtRounds(players, currentRot)
@@ -382,15 +524,16 @@
     // LASKENTA
     // ============================================================
     function calculateRoundBinaryWeights(courts, roundResults, roundIdx) {
-      const allDiffs = [];
+      const allCappedDiffs = [];
       courts.forEach(court => {
         const result = roundResults?.[court.courtIndex];
         if (result) {
-          allDiffs.push(Math.abs(result.team1Score - result.team2Score));
+          const rawDiff = Math.abs(result.team1Score - result.team2Score);
+          allCappedDiffs.push(Math.min(MAX_POINT_DIFF, rawDiff));
         }
       });
 
-      const uniqueDiffs = [...new Set(allDiffs)].sort((a, b) => b - a);
+      const uniqueDiffs = [...new Set(allCappedDiffs)].sort((a, b) => b - a);
       const weightMap = new Map();
       if (uniqueDiffs.length >= 3) {
         weightMap.set(uniqueDiffs[0], 4);
@@ -411,8 +554,8 @@
         const pairing = getRoundPairing(court, roundIdx);
         if (!pairing) return;
 
-        const diff = Math.abs(result.team1Score - result.team2Score);
-        const weight = weightMap.get(diff) || 1;
+        const cappedDiff = Math.min(MAX_POINT_DIFF, Math.abs(result.team1Score - result.team2Score));
+        const weight = weightMap.get(cappedDiff) || 1;
         const team1Won = result.team1Score > result.team2Score;
 
         pairing.team1.forEach(p => {
@@ -447,7 +590,8 @@
           if (!pairing) return;
 
           const team1Won = result.team1Score > result.team2Score;
-          const diff = result.team1Score - result.team2Score;
+          const rawDiff = result.team1Score - result.team2Score;
+          const diff = capDiff(rawDiff);
 
           pairing.team1.forEach(p => {
             if (!stats[p]) stats[p] = { wins: 0, played: 0, pointDiffSum: 0 };
@@ -480,10 +624,7 @@
         const bAvg = bValues[p].length > 0
           ? bValues[p].reduce((a, b) => a + b, 0) / bValues[p].length
           : 0;
-        return {
-          name: p, winRate, avgPointDiff, bAvg,
-          wins: s.wins, played: s.played, pointDiffSum: s.pointDiffSum
-        };
+        return { name: p, winRate, avgPointDiff, bAvg, wins: s.wins, played: s.played, pointDiffSum: s.pointDiffSum };
       });
 
       standings.sort((a, b) => {
@@ -508,12 +649,48 @@
       return true;
     }
 
+    function computeRoundStatus(data) {
+      if (!data || !data.courts || !data.rounds) return { totalEntered: 0, total: 0, currentRound: 1, completed: false };
+      const numCourts = data.courts.length;
+      const total = 3 * numCourts;
+      let totalEntered = 0;
+      let currentRound = 3;
+      let completed = true;
+      for (let r = 0; r < 3; r++) {
+        let roundEntered = 0;
+        for (const court of data.courts) {
+          if (data.rounds[r]?.results?.[court.courtIndex]) {
+            roundEntered++;
+            totalEntered++;
+          }
+        }
+        if (roundEntered < numCourts) {
+          if (completed) currentRound = r + 1;
+          completed = false;
+        }
+      }
+      return { totalEntered, total, currentRound, completed };
+    }
+
     // ============================================================
     // FIREBASE
     // ============================================================
     async function createEvent(playerNames) {
-      const eventId = generateId();
+      let eventId = null;
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const candidate = generateId();
+        const check = await get(ref(db, 'events/' + candidate));
+        if (!check.exists()) { eventId = candidate; break; }
+      }
+      if (!eventId) throw new Error('Tunnisteen luonti epäonnistui, yritä uudelleen.');
+
       const courts = assignCourts(playerNames, []);
+      let restDirection = "up";
+      const num5p = count5pCourts(courts);
+      if (num5p === 1) {
+        const restIdx = findRestCourtIndex(courts);
+        if (restIdx === 0) restDirection = "down";
+      }
 
       const eventData = {
         eventId,
@@ -525,6 +702,7 @@
           { roundIndex: 1, results: {} },
           { roundIndex: 2, results: {} }
         ],
+        restDirection,
         status: 'active'
       };
 
@@ -533,8 +711,13 @@
     }
 
     async function loadEvent(eventId) {
-      const snapshot = await get(ref(db, 'events/' + eventId));
-      return snapshot.exists() ? snapshot.val() : null;
+      const variants = [...new Set([eventId, eventId.toUpperCase(), eventId.toLowerCase()])];
+      for (const v of variants) {
+        if (!v) continue;
+        const snap = await get(ref(db, 'events/' + v));
+        if (snap.exists()) return snap.val();
+      }
+      return null;
     }
 
     function listenEvent(eventId, callback) {
@@ -545,24 +728,21 @@
     }
 
     // ============================================================
-    // TAPAHTUMANÄKYMÄ
+    // TAPAHTUMANÄKYMÄ (JÄRJESTÄJÄ)
     // ============================================================
     function goToEventView() {
       showView('view-event');
       if (!currentEventId) return;
 
-      $('eventIdDisplay').value = currentEventId;
+      $('eventIdDisplay').textContent = currentEventId;
       const link = window.location.origin + window.location.pathname + '?event=' + currentEventId;
       $('shareLink').value = link;
 
       if (!$('qr-container').hasChildNodes()) {
         try {
           new QRCode($('qr-container'), {
-            text: link,
-            width: 200,
-            height: 200,
-            colorDark: '#1a365d',
-            colorLight: '#ffffff',
+            text: link, width: 200, height: 200,
+            colorDark: '#1a365d', colorLight: '#ffffff',
             correctLevel: QRCode.CorrectLevel.H
           });
         } catch (e) { console.error('QR-virhe:', e); }
@@ -583,10 +763,14 @@
       const container = $('courtsContainer');
       container.innerHTML = '';
 
-      (data.courts || []).forEach(court => {
+      const num5p = count5pCourts(data.courts || []);
+      const restIdx = num5p === 1 ? findRestCourtIndex(data.courts) : -1;
+
+      (data.courts || []).forEach((court, i) => {
+        const isRest = i === restIdx;
         const div = document.createElement('div');
-        div.className = 'court-card';
-        let html = `<div class="court-title">Kenttä ${court.courtNumber}</div>`;
+        div.className = 'court-card' + (isRest ? ' rest-court' : '');
+        let html = `<div class="court-title">Kenttä ${court.courtNumber}${isRest ? ' <span class="tag rest">TAUKOKENTTÄ</span>' : ''}</div>`;
 
         (court.rounds || []).forEach((pairing, rIdx) => {
           const result = data.rounds?.[rIdx]?.results?.[court.courtIndex];
@@ -601,23 +785,42 @@
               : `<div class="muted" style="margin-top:2px;">Odottaa tulosta</div>`}
           </div>`;
         });
-
         div.innerHTML = html;
         container.appendChild(div);
       });
+
+      // Tilapalkki
+      const status = computeRoundStatus(data);
+      const statusDiv = $('roundStatus');
+      statusDiv.classList.remove('hidden');
+      if (status.completed) {
+        statusDiv.innerHTML = `<strong>✅ Kierros valmis</strong> – ${status.totalEntered}/${status.total} tulosta`;
+      } else {
+        statusDiv.innerHTML = `<strong>Kierros:</strong> Erä ${status.currentRound}/3 – ${status.totalEntered}/${status.total} tulosta`;
+      }
+
+      // Rest-tila
+      const restDiv = $('restStatus');
+      if (num5p === 1) {
+        restDiv.classList.remove('hidden');
+        const dirText = (data.restDirection || "up") === "up" ? "▲ seuraavaksi ylöspäin" : "▼ seuraavaksi alaspäin";
+        restDiv.innerHTML = `Taukovuoro: <strong>Kenttä ${data.courts[restIdx].courtNumber}</strong> — ${dirText}`;
+      } else if (num5p > 1) {
+        restDiv.classList.remove('hidden');
+        restDiv.innerHTML = `Useita 5 pelaajan kenttiä – pelaajat vaihtuvat sijoitusten mukaan.`;
+      } else {
+        restDiv.classList.add('hidden');
+      }
 
       $('btnNextRound').classList.toggle('hidden', !isCycleComplete(data));
       $('btnShowHistory').classList.toggle('hidden', !data.previousCycle);
     }
 
     // ============================================================
-    // EDELLISEN KIERROKSEN NÄKYMÄ
+    // HISTORIA
     // ============================================================
     function goToHistoryView() {
-      if (!currentEventData || !currentEventData.previousCycle) {
-        goToEventView();
-        return;
-      }
+      if (!currentEventData || !currentEventData.previousCycle) { goToEventView(); return; }
       showView('view-history');
       renderHistoryView();
     }
@@ -636,18 +839,12 @@
 
       const header = document.createElement('div');
       header.className = 'info-box';
-      header.innerHTML = `
-        <div><strong>Kierros valmistui:</strong> ${prev.completedAt ? formatTimestamp(prev.completedAt) : '–'}</div>
-        <div class="muted" style="margin-top:4px;">
-          Alla on päättyneen 3 erän kierroksen eräkohtaiset parit ja tulokset sekä pelaajien siirtymiset uusille kentille.
-        </div>
-      `;
+      header.innerHTML = `<div><strong>Kierros valmistui:</strong> ${prev.completedAt ? formatTimestamp(prev.completedAt) : '–'}</div>`;
       container.appendChild(header);
 
       (prev.courts || []).forEach(court => {
         const courtDiv = document.createElement('div');
         courtDiv.className = 'history-court';
-
         let html = `<div class="history-court-title">Kenttä ${court.courtNumber} (edellinen)</div>`;
 
         (court.rounds || []).forEach((pairing, rIdx) => {
@@ -664,15 +861,10 @@
           const oldCourt = court.courtNumber;
           const newCourt = currentCourtOf[p];
           let badge;
-          if (newCourt === undefined) {
-            badge = `<span class="muted">ei enää mukana</span>`;
-          } else if (newCourt < oldCourt) {
-            badge = `<span class="badge-up">▲ → Kenttä ${newCourt}</span>`;
-          } else if (newCourt > oldCourt) {
-            badge = `<span class="badge-down">▼ → Kenttä ${newCourt}</span>`;
-          } else {
-            badge = `<span class="muted">→ Kenttä ${newCourt} (pysyi)</span>`;
-          }
+          if (newCourt === undefined) badge = `<span class="muted">ei enää mukana</span>`;
+          else if (newCourt < oldCourt) badge = `<span class="arrow-up">▲ → Kenttä ${newCourt}</span>`;
+          else if (newCourt > oldCourt) badge = `<span class="arrow-down">▼ → Kenttä ${newCourt}</span>`;
+          else badge = `<span class="arrow-stay">→ Kenttä ${newCourt} (pysyi)</span>`;
           html += `<div class="round-row">${p}: ${badge}</div>`;
         });
 
@@ -680,7 +872,7 @@
         container.appendChild(courtDiv);
       });
 
-      // Yhteenvetotaulukko
+      // Yhteenveto
       const summaryDiv = document.createElement('div');
       summaryDiv.style.marginTop = '12px';
       summaryDiv.innerHTML = `<h2>Yhteenveto siirroista</h2>`;
@@ -700,15 +892,10 @@
         <tr><th>Pelaaja</th><th>Vanha</th><th>Uusi</th><th>Muutos</th></tr>`;
       movements.forEach(m => {
         let change;
-        if (m.newCourt === undefined) {
-          change = '<span class="muted">–</span>';
-        } else if (m.newCourt < m.oldCourt) {
-          change = `<span class="badge-up">▲ ${m.oldCourt - m.newCourt} ylös</span>`;
-        } else if (m.newCourt > m.oldCourt) {
-          change = `<span class="badge-down">▼ ${m.newCourt - m.oldCourt} alas</span>`;
-        } else {
-          change = '<span class="muted">– pysyi</span>';
-        }
+        if (m.newCourt === undefined) change = '<span class="muted">–</span>';
+        else if (m.newCourt < m.oldCourt) change = `<span class="arrow-up">▲ ${m.oldCourt - m.newCourt} ylös</span>`;
+        else if (m.newCourt > m.oldCourt) change = `<span class="arrow-down">▼ ${m.newCourt - m.oldCourt} alas</span>`;
+        else change = '<span class="arrow-stay">– pysyi</span>';
         tableHtml += `<tr>
           <td>${m.name}</td>
           <td>K${m.oldCourt}</td>
@@ -717,9 +904,24 @@
         </tr>`;
       });
       tableHtml += `</table>`;
-
       summaryDiv.innerHTML += tableHtml;
       container.appendChild(summaryDiv);
+    }
+
+    // ============================================================
+    // PELAAJAN TUNNISTUS
+    // ============================================================
+    function showPlayerIdentify() {
+      showView('view-player-identify');
+      const select = $('playerIdentifySelect');
+      select.innerHTML = '<option value="">-- Valitse nimesi --</option>';
+      (currentEventData?.playerNames || []).forEach(name => {
+        const opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = name;
+        select.appendChild(opt);
+      });
+      $('identifyError').classList.add('hidden');
     }
 
     // ============================================================
@@ -731,68 +933,101 @@
       $('playerError').classList.add('hidden');
       $('playerMsg').classList.add('hidden');
 
+      // Vaihda pelaaja -nappi vain jos pelaaja on tunnistettu
+      const playerName = getPlayerName(currentEventId);
+      $('btnSwitchPlayer').classList.toggle('hidden', !playerName);
+
       if (!currentEventId) return;
 
       listenEvent(currentEventId, (data) => {
         if (!data) {
           $('playerError').textContent = 'Tapahtumaa ei löytynyt.';
           $('playerError').classList.remove('hidden');
-          $('courtSelect').innerHTML = '';
-          $('playerScoreForm').innerHTML = '';
-          $('btnSubmitScores').classList.add('hidden');
           return;
         }
         currentEventData = data;
+        // Nollaa manuaalinen kenttävalinta kun kierros vaihtuu
+        const cycleCount = (data.previousCycles || []).length;
+        if (cycleCount !== lastCycleCount) {
+          lastCycleCount = cycleCount;
+          manualCourtOverride = null;
+        }
         populateCourtSelect(data);
       });
     }
 
-    function getSavedCourt(eventId) {
-      const v = localStorage.getItem('court_' + eventId);
-      return v !== null ? parseInt(v) : null;
-    }
-
-    function saveCourt(eventId, courtIndex) {
-      localStorage.setItem('court_' + eventId, String(courtIndex));
-    }
-
     function populateCourtSelect(data) {
       const select = $('courtSelect');
-      const prevVal = select.value;
+      const playerName = getPlayerName(currentEventId);
+      let autoCourt = null;
+      if (playerName) {
+        const c = (data.courts || []).find(c => c.players.includes(playerName));
+        if (c) autoCourt = c.courtIndex;
+      }
+
+      let targetIdx;
+      if (manualCourtOverride !== null && (data.courts || []).some(c => c.courtIndex === manualCourtOverride)) {
+        targetIdx = manualCourtOverride;
+      } else if (autoCourt !== null) {
+        targetIdx = autoCourt;
+      } else {
+        targetIdx = data.courts?.[0]?.courtIndex ?? 0;
+      }
+
       select.innerHTML = '';
       (data.courts || []).forEach(court => {
         const opt = document.createElement('option');
         opt.value = String(court.courtIndex);
-        opt.textContent = `Kenttä ${court.courtNumber} (${court.players.join(', ')})`;
+        opt.textContent = `K${court.courtNumber}`;
         select.appendChild(opt);
       });
-
-      let targetVal = null;
-      if (prevVal && [...select.options].some(o => o.value === prevVal)) {
-        targetVal = prevVal;
-      } else {
-        const saved = getSavedCourt(currentEventId);
-        if (saved !== null && [...select.options].some(o => o.value === String(saved))) {
-          targetVal = String(saved);
-        } else if (data.courts && data.courts.length > 0) {
-          targetVal = String(data.courts[0].courtIndex);
-        }
-      }
-      if (targetVal !== null) select.value = targetVal;
+      select.value = String(targetIdx);
 
       select.onchange = () => {
-        const idx = parseInt(select.value);
-        saveCourt(currentEventId, idx);
-        renderScoreForm(currentEventData, idx);
+        manualCourtOverride = parseInt(select.value);
+        renderScoreForm(data, manualCourtOverride);
+        updateCourtContext(data, manualCourtOverride);
       };
 
-      if (targetVal !== null) {
-        renderScoreForm(data, parseInt(targetVal));
+      updateCourtContext(data, targetIdx);
+      renderScoreForm(data, targetIdx);
+    }
+
+    function updateCourtContext(data, courtIndex) {
+      const court = (data.courts || []).find(c => c.courtIndex === courtIndex);
+      if (!court) return;
+
+      const playerName = getPlayerName(currentEventId);
+      const banner = $('myCourtBanner');
+      const list = $('courtPlayersList');
+
+      if (playerName) {
+        const theirCourt = (data.courts || []).find(c => c.players.includes(playerName));
+        if (theirCourt && theirCourt.courtIndex === courtIndex) {
+          banner.classList.remove('hidden');
+          banner.innerHTML = `<strong>Sinun kenttäsi: K${theirCourt.courtNumber}</strong>`;
+        } else if (theirCourt) {
+          banner.classList.remove('hidden');
+          banner.innerHTML = `Oma kenttäsi on <strong>K${theirCourt.courtNumber}</strong> – syötät nyt kentälle <strong>K${court.courtNumber}</strong>`;
+        } else {
+          banner.classList.add('hidden');
+        }
+      } else {
+        banner.classList.add('hidden');
       }
+
+      list.textContent = `Pelaajat: ${court.players.join(', ')}`;
     }
 
     function renderScoreForm(data, courtIndex) {
       const formDiv = $('playerScoreForm');
+
+      // Säilytä syötteet uudelleenrenderöinnin ajaksi
+      const oldS1 = document.getElementById('score1');
+      const oldS2 = document.getElementById('score2');
+      const oldKey = formDiv.dataset.renderKey || '';
+      const savedVals = oldS1 ? { s1: oldS1.value, s2: oldS2?.value || '' } : null;
+
       formDiv.innerHTML = '';
 
       const court = (data.courts || []).find(c => c.courtIndex === courtIndex);
@@ -804,13 +1039,12 @@
 
       let targetRound = -1;
       for (let r = 0; r < 3; r++) {
-        if (!getCourtResult(data, r, courtIndex)) {
-          targetRound = r;
-          break;
-        }
+        if (!getCourtResult(data, r, courtIndex)) { targetRound = r; break; }
       }
 
-      // Näytä kaikki 3 erää
+      const newKey = `${courtIndex}-${targetRound}`;
+      formDiv.dataset.renderKey = newKey;
+
       for (let r = 0; r < 3; r++) {
         const pairing = getRoundPairing(court, r);
         const result = getCourtResult(data, r, courtIndex);
@@ -847,7 +1081,7 @@
       const form = document.createElement('div');
       form.style.marginTop = '12px';
       form.innerHTML = `
-        <label>Erä ${targetRound + 1} – pisteet</label>
+        <label>Erä ${targetRound + 1} – pisteet (esim. 6 ja 4)</label>
         <div class="score-row">
           <span style="flex:1; font-size:0.85rem;">${pairing.team1.join(' & ')}</span>
           <input type="number" id="score1" min="0" max="99" inputmode="numeric" placeholder="0">
@@ -858,6 +1092,14 @@
         ${pairing.resting ? `<div class="muted" style="margin-top:4px;">Lepo: ${pairing.resting}</div>` : ''}
       `;
       formDiv.appendChild(form);
+
+      // Palauta syötteet jos sama konteksti
+      if (savedVals && oldKey === newKey) {
+        const ns1 = document.getElementById('score1');
+        const ns2 = document.getElementById('score2');
+        if (ns1) ns1.value = savedVals.s1;
+        if (ns2) ns2.value = savedVals.s2;
+      }
 
       $('btnSubmitScores').classList.remove('hidden');
       $('playerError').classList.add('hidden');
@@ -885,13 +1127,10 @@
         try {
           const checkRef = ref(db, `events/${currentEventId}/rounds/${targetRound}/results/${courtIndex}`);
           const existing = await get(checkRef);
-          if (existing.exists()) {
-            throw new Error('Tämän erän tulokset on jo syötetty toisaalta. Päivitä näkymä.');
-          }
+          if (existing.exists()) throw new Error('Tämän erän tulokset on jo syötetty toisaalta. Päivitä näkymä.');
 
           await set(checkRef, {
-            team1Score: s1,
-            team2Score: s2,
+            team1Score: s1, team2Score: s2,
             timestamp: new Date().toISOString()
           });
 
@@ -920,7 +1159,7 @@
       container.innerHTML = '';
 
       let html = `<table class="standings-table">
-        <tr><th>Sija</th><th>Pelaaja</th><th>Voitot</th><th>Piste-ero ka.</th><th>B-arvo</th></tr>`;
+        <tr><th>Sija</th><th>Pelaaja</th><th>Voitot</th><th>Eräpiste-eron ka.</th><th>B-arvo</th></tr>`;
       standings.forEach((s, i) => {
         html += `<tr>
           <td>${i + 1}</td>
@@ -932,16 +1171,36 @@
       });
       html += '</table>';
 
-      html += `<div class="info-box" style="margin-top:12px;">
-        <div><strong>Siirrot seuraavalle kierrokselle:</strong></div>
-        <div class="muted" style="margin-top:4px;">
-          Jokaiselta kentältä paras nousee yhden tason ylös ja huonoin laskee yhden tason alas (ylin ja alin kenttä vain toiseen suuntaan).
-        </div>
-      </div>`;
-
-      // Esikatselu siirroista
       try {
-        const previewCourts = computeNextCourts(currentEventData.courts, standings);
+        const { courts: previewCourts, restDirection: newDir } = computeNextCourts(
+          currentEventData.courts, standings, currentEventData.restDirection || "up"
+        );
+
+        const num5p = count5pCourts(currentEventData.courts || []);
+        if (num5p === 1) {
+          const oldRestIdx = findRestCourtIndex(currentEventData.courts);
+          const newRestIdx = findRestCourtIndex(previewCourts);
+          const dirText = (currentEventData.restDirection || "up") === "up" ? "▲ ylös" : "▼ alas";
+          html += `<div class="info-box" style="margin-top:12px;">
+            <div><strong>Taukovuoron siirto:</strong> ${dirText}</div>
+            <div>Vanha taukokenttä: K${currentEventData.courts[oldRestIdx].courtNumber} → Uusi: K${previewCourts[newRestIdx].courtNumber}</div>
+            <div class="muted" style="margin-top:4px;">
+              ${(currentEventData.restDirection || "up") === "up"
+                ? "2 parasta nousee taukokentältä, 1 heikoin putoaa ylemmältä."
+                : "2 heikointa putoaa taukokentältä, 1 paras nousee alemmalta."}
+            </div>
+          </div>`;
+        } else if (num5p > 1) {
+          html += `<div class="info-box" style="margin-top:12px;">
+            <div><strong>Siirrot:</strong> Kaikki kentät samankokoisia – pelaajat järjestetään uudelleen sijoitusten mukaan.</div>
+            <div class="muted" style="margin-top:4px;">Paras puolisko ylemmille kentille, heikoin alimmille.</div>
+          </div>`;
+        } else {
+          html += `<div class="info-box" style="margin-top:12px;">
+            <div><strong>Siirrot:</strong> Vain 1 heikoin putoaa ja 1 paras nousee kenttien välillä.</div>
+          </div>`;
+        }
+
         html += `<table class="standings-table" style="margin-top:8px;">
           <tr><th>Kenttä</th><th>Uudet pelaajat</th></tr>`;
         previewCourts.forEach((c, i) => {
@@ -992,7 +1251,7 @@
     });
 
     $('joinCode').addEventListener('input', (e) => {
-      e.target.value = e.target.value.toUpperCase();
+      e.target.value = e.target.value.toUpperCase().replace(/\s+/g, '');
     });
 
     $('btnJoin').addEventListener('click', async () => {
@@ -1019,9 +1278,11 @@
     });
 
     $('btnCopyId').addEventListener('click', () => {
-      navigator.clipboard.writeText(currentEventId || '').then(() => {
+      copyToClipboard(currentEventId || '').then(() => {
         $('copyMsg').classList.remove('hidden');
         setTimeout(() => $('copyMsg').classList.add('hidden'), 1500);
+      }).catch(() => {
+        alert('Kopiointi ei onnistunut. Koodi: ' + currentEventId);
       });
     });
 
@@ -1041,6 +1302,25 @@
       goToEventView();
     });
 
+    $('btnIdentifyConfirm').addEventListener('click', () => {
+      const selected = $('playerIdentifySelect').value;
+      if (!selected) {
+        $('identifyError').textContent = 'Valitse nimesi.';
+        $('identifyError').classList.remove('hidden');
+        return;
+      }
+      localStorage.setItem('playerName_' + currentEventId, selected);
+      $('identifyError').classList.add('hidden');
+      goToPlayerView(false);
+    });
+
+    $('btnSwitchPlayer').addEventListener('click', () => {
+      if (!currentEventId) return;
+      localStorage.removeItem('playerName_' + currentEventId);
+      manualCourtOverride = null;
+      showPlayerIdentify();
+    });
+
     $('btnNextRound').addEventListener('click', () => {
       if (!isCycleComplete(currentEventData)) {
         alert('Kaikkia tuloksia ei ole vielä syötetty.');
@@ -1050,27 +1330,47 @@
     });
 
     $('btnApplyPromotions').addEventListener('click', async () => {
-      if (!currentEventData) return;
-      if (!isCycleComplete(currentEventData)) {
-        alert('Kierros ei ole vielä valmis.');
+      if (!currentEventId) return;
+
+      // Hae tuorein data varmistaaksemme ettei tulos ole muuttunut
+      let freshData;
+      try {
+        freshData = await loadEvent(currentEventId);
+      } catch (e) {
+        alert('Virhe ladattaessa dataa: ' + e.message);
+        return;
+      }
+      if (!freshData) {
+        alert('Tapahtumaa ei löytynyt.');
+        return;
+      }
+      if (!isCycleComplete(freshData)) {
+        alert('Kierros ei ole vielä valmis. Pelaaja on saattanut syöttää tuloksen juuri nyt. Yritä uudelleen.');
+        currentEventData = freshData;
         return;
       }
 
-      const standings = computeStandings(currentEventData);
-      let newCourts;
+      currentEventData = freshData;
+      const standings = computeStandings(freshData);
+      let result;
       try {
-        newCourts = computeNextCourts(currentEventData.courts, standings);
+        result = computeNextCourts(freshData.courts, standings, freshData.restDirection || "up");
       } catch (e) {
         alert('Virhe siirtojen laskennassa: ' + e.message);
         return;
       }
 
+      const { courts: newCourts, restDirection: newRestDirection } = result;
+
       const previousCycle = {
-        courts: currentEventData.courts,
-        rounds: currentEventData.rounds,
+        courts: freshData.courts,
+        rounds: freshData.rounds,
         standings: standings,
         completedAt: new Date().toISOString()
       };
+
+      const existingCycles = freshData.previousCycles || [];
+      const newCycles = [...existingCycles, previousCycle].slice(-20);
 
       const newRounds = [
         { roundIndex: 0, results: {} },
@@ -1079,16 +1379,22 @@
       ];
 
       try {
-        await set(ref(db, `events/${currentEventId}/previousCycle`), previousCycle);
-        await set(ref(db, `events/${currentEventId}/courts`), newCourts);
-        await set(ref(db, `events/${currentEventId}/rounds`), newRounds);
+        await update(ref(db, 'events/' + currentEventId), {
+          previousCycle: previousCycle,
+          previousCycles: newCycles,
+          courts: newCourts,
+          rounds: newRounds,
+          restDirection: newRestDirection
+        });
 
         currentEventData = {
-          ...currentEventData,
-          previousCycle,
-          courts: newCourts,
-          rounds: newRounds
+          ...freshData,
+          previousCycle, previousCycles: newCycles,
+          courts: newCourts, rounds: newRounds,
+          restDirection: newRestDirection
         };
+        lastCycleCount = newCycles.length;
+        manualCourtOverride = null;
 
         goToHistoryView();
       } catch (e) {
@@ -1101,14 +1407,16 @@
     });
 
     $('btnReset').addEventListener('click', () => {
-      if (!confirm('Haluatko keskeyttää tapahtuman? Tiedot jäävät palvelimelle, mutta poistut tästä näkymästä.')) return;
+      if (!confirm('Haluatko keskeyttää tapahtuman? Tiedot jäävät palvelimelle.')) return;
       if (unsubscribeEvent) { unsubscribeEvent(); unsubscribeEvent = null; }
       if (currentEventId) {
         localStorage.removeItem('organizer_' + currentEventId);
-        localStorage.removeItem('court_' + currentEventId);
+        localStorage.removeItem('playerName_' + currentEventId);
       }
       currentEventId = null;
       currentEventData = null;
+      manualCourtOverride = null;
+      lastCycleCount = 0;
       history.replaceState({}, '', window.location.pathname);
       $('playerNames').value = '';
       $('joinCode').value = '';
@@ -1119,20 +1427,43 @@
     // ============================================================
     // KÄYNNISTYS
     // ============================================================
-    (function init() {
+    (async function init() {
       const params = new URLSearchParams(window.location.search);
-      const eventId = params.get('event');
+      const eventId = normalizeCode(params.get('event'));
 
-      if (eventId) {
-        currentEventId = eventId;
-        const orgFlag = localStorage.getItem('organizer_' + eventId) === 'true';
-        if (orgFlag) {
-          goToEventView();
-        } else {
-          goToPlayerView(false);
-        }
-      } else {
+      if (!eventId) {
         showView('view-setup');
+        return;
+      }
+
+      currentEventId = eventId;
+      const orgFlag = localStorage.getItem('organizer_' + eventId) === 'true';
+
+      if (orgFlag) {
+        goToEventView();
+        return;
+      }
+
+      // Pelaaja: tarkista onko jo tunnistautunut
+      const playerName = getPlayerName(eventId);
+      if (playerName) {
+        goToPlayerView(false);
+        return;
+      }
+
+      // Lataa tapahtuma ja näytä tunnistus
+      try {
+        const data = await loadEvent(eventId);
+        if (!data) {
+          alert('Tapahtumaa ei löytynyt koodilla ' + eventId);
+          window.location.href = window.location.pathname;
+          return;
+        }
+        currentEventData = data;
+        lastCycleCount = (data.previousCycles || []).length;
+        showPlayerIdentify();
+      } catch (e) {
+        alert('Virhe: ' + e.message);
       }
     })();
   </script>
