@@ -1,7 +1,8 @@
 <!--
   3 Erää - Turnausjärjestelmä
-  Versio: 1.2.0
-  Muutokset: Hampurilaisvalikko, tapahtuman poisto, oman historian korjaus
+  Versio: 1.3.0
+  Muutokset: +30% fonttikoko (uusi 0% baseline), URL-reititys, hampurilaisnavigaatio,
+             pelaajakoodi ylätunnisteessa, hallintalinkki, tapahtuman poisto
 -->
 <!DOCTYPE html>
 <html lang="fi">
@@ -17,14 +18,20 @@
         var theme = localStorage.getItem('APP_ui_theme') || 'auto';
         if (theme === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
         else if (theme === 'light') document.documentElement.setAttribute('data-theme', 'light');
-        var storedScale = localStorage.getItem('APP_ui_scale');
-        var pct = 100;
-        if (storedScale) {
-          var num = parseFloat(storedScale);
-          if (num > 0 && num <= 2) { pct = Math.round(num * 100); localStorage.setItem('APP_ui_scale', String(pct)); }
-          else if (num >= 75 && num <= 150) { pct = num; }
+
+        var stored = localStorage.getItem('APP_ui_scale');
+        var adj = 0;
+        if (stored) {
+          var num = parseFloat(stored);
+          if (!isNaN(num)) {
+            if (num >= -25 && num <= 20) { adj = Math.round(num / 5) * 5; }
+            else if (num >= 75 && num <= 150) { adj = Math.max(-25, Math.min(20, Math.round((num - 100) / 5) * 5)); }
+            else if (num > 0 && num <= 2) { adj = Math.max(-25, Math.min(20, Math.round((Math.round(num * 100) - 100) / 5) * 5)); }
+          }
+          localStorage.setItem('APP_ui_scale', String(adj));
         }
-        document.documentElement.style.setProperty('--text-scale', String(pct / 100));
+        var multiplier = (100 + adj) / 100;
+        document.documentElement.style.setProperty('--text-scale', String(multiplier));
       } catch (e) {}
     })();
   </script>
@@ -64,7 +71,7 @@
       --shadow: 0 1px 3px rgba(0,0,0,0.4); --shadow-lg: 0 4px 20px rgba(0,0,0,0.5);
     }
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-    html { font-size: calc(16px * var(--text-scale)); -webkit-text-size-adjust: 100%; }
+    html { font-size: calc(16px * 1.3 * var(--text-scale)); -webkit-text-size-adjust: 100%; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; margin: 0; }
     body.tv-mode { background: #000; color: #fff; }
     body.tv-mode .topbar, body.tv-mode .screen { display: none !important; }
@@ -73,11 +80,15 @@
     h1 { font-size: 1.5rem; margin: 8px 0 4px; }
     h2 { font-size: 1.15rem; margin: 16px 0 8px; }
     .sub { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px; }
-    .topbar { display: flex; align-items: center; gap: 4px; padding: 2px 8px; min-height: 52px; background: var(--surface); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 10; max-width: 640px; margin: 0 auto; padding-top: max(2px, env(safe-area-inset-top, 0px)); }
-    .topbar-title { font-weight: 700; font-size: 1.05rem; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
+
+    .topbar { display: flex; align-items: center; gap: 4px; padding: 2px 8px; min-height: 56px; background: var(--surface); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 10; max-width: 640px; margin: 0 auto; padding-top: max(2px, env(safe-area-inset-top, 0px)); }
+    .topbar-title { font-weight: 700; font-size: 1.05rem; flex: 1; color: var(--text); display: flex; align-items: center; gap: 8px; min-width: 0; overflow: hidden; }
+    .topbar-title #topbarTitleText { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 0 1 auto; min-width: 0; }
+    .topbar-code { font-family: ui-monospace, monospace; font-size: 0.72rem; background: var(--primary-soft); color: var(--primary-dark); padding: 2px 6px; border-radius: 4px; font-weight: 700; letter-spacing: 0.05em; flex-shrink: 0; }
     .topbar-actions { display: flex; gap: 2px; align-items: center; }
     .icon-btn { background: transparent; border: none; border-radius: 10px; width: 44px; height: 44px; min-width: 44px; min-height: 44px; display: flex; align-items: center; justify-content: center; color: var(--text); cursor: pointer; font-size: 1.3rem; margin: 0; padding: 0; }
     .icon-btn:hover, .icon-btn:active { background: var(--surface-2); }
+
     .screen { max-width: 640px; margin: 0 auto; padding: 12px; padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px)); }
     .card { background: var(--surface); border-radius: 12px; padding: 16px; box-shadow: var(--shadow); width: 100%; margin-bottom: 12px; color: var(--text); }
     label { display: block; font-size: 0.85rem; font-weight: 600; margin: 8px 0 4px; color: var(--text); }
@@ -102,14 +113,11 @@
     .success-box { background: var(--win-bg); padding: 10px; border-radius: 8px; font-size: 0.85rem; color: var(--win-fg); margin: 8px 0; }
     .error { color: var(--danger); font-size: 0.9rem; margin-top: 8px; min-height: 1em; }
     .success { color: var(--win-fg); font-size: 0.85rem; margin-top: 4px; }
+
     .event-header { background: var(--surface); padding: 12px 16px; border-radius: 12px; margin-bottom: 12px; box-shadow: var(--shadow); }
-    .event-name { font-size: 1.2rem; font-weight: 700; color: var(--text); margin-bottom: 4px; }
-    .event-status { font-size: 0.85rem; color: var(--text-muted); }
+    .event-status { font-size: 0.95rem; color: var(--text-muted); }
     .event-status strong { color: var(--primary); }
-    .tabs { display: flex; gap: 4px; margin-bottom: 12px; background: var(--surface); padding: 4px; border-radius: 10px; box-shadow: var(--shadow); }
-    .tab { flex: 1; padding: 10px 12px; min-height: 44px; margin: 0; background: transparent; color: var(--text-muted); font-weight: 600; border: none; border-radius: 8px; cursor: pointer; font-size: 0.9rem; }
-    .tab.active { background: var(--primary); color: var(--on-primary); }
-    .tab:not(.active):hover { background: var(--surface-2); }
+
     .court-card { background: var(--surface); border-left: 4px solid var(--primary); padding: 12px; border-radius: 8px; margin-bottom: 10px; box-shadow: var(--shadow); }
     .court-card.my-court { border-left-color: var(--win-fg); background: linear-gradient(90deg, var(--win-bg) 0%, var(--surface) 20%); }
     .court-card.rest-court { border-left-color: var(--warn-border); }
@@ -117,7 +125,6 @@
     .court-badge { display: inline-block; background: var(--win-bg); color: var(--win-fg); padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: 700; }
     .tag { display: inline-block; background: var(--primary-soft); color: var(--primary-dark); padding: 1px 6px; border-radius: 4px; font-size: 0.75rem; margin-left: 4px; border: 1px solid var(--border); }
     .tag.rest { background: var(--warn-bg); color: var(--warn-fg); border-color: var(--warn-border); }
-    .player-list { font-size: 0.9rem; line-height: 1.6; color: var(--text); }
     .round-row { background: var(--surface-2); padding: 8px 10px; border-radius: 6px; margin: 4px 0; font-size: 0.85rem; color: var(--text); }
     .round-row.done { background: var(--win-bg); border-left: 3px solid var(--win-fg); }
     .round-row.pending { background: var(--warn-bg); border-left: 3px solid var(--warn-border); }
@@ -208,7 +215,10 @@
 
   <div class="topbar">
     <button class="icon-btn hidden" id="btnBackTop" aria-label="Takaisin" type="button">←</button>
-    <div class="topbar-title" id="topbarTitle">🎾 3 Erää</div>
+    <div class="topbar-title" id="topbarTitle">
+      <span id="topbarTitleText">🎾 3 Erää</span>
+      <span id="topbarTitleCode" class="topbar-code hidden"></span>
+    </div>
     <div class="topbar-actions">
       <button class="icon-btn" id="btnHamburger" aria-label="Valikko" type="button">☰</button>
     </div>
@@ -243,13 +253,7 @@
 
     <div id="view-event" class="hidden">
       <div class="event-header">
-        <div class="event-name" id="eventNameDisplay"></div>
         <div class="event-status" id="eventStatusDisplay"></div>
-      </div>
-      <div class="tabs" id="eventTabs">
-        <button class="tab active" data-tab="players" type="button">Pelaajat</button>
-        <button class="tab" data-tab="admin" type="button">Hallinta</button>
-        <button class="tab" data-tab="history" type="button">Historia</button>
       </div>
       <div id="tabContentPlayers"></div>
       <div id="tabContentAdmin" class="hidden"></div>
@@ -291,7 +295,6 @@
     <div class="tv-standings" id="tvStandings"></div>
   </div>
 
-  <!-- HAMPURILAISVALIKKO -->
   <div id="hamburgerModal" class="modal-overlay hidden" role="dialog" aria-modal="true">
     <div class="modal">
       <div class="modal-drag-handle"></div>
@@ -334,6 +337,7 @@
       <p class="sub">Valitse nimesi pelaajalistalta.</p>
       <select id="identifySelect"></select>
       <button id="btnIdentifyConfirm" type="button">Jatka</button>
+      <button id="btnIdentifySkip" class="secondary hidden" type="button">Ohita (en pelaa)</button>
       <p id="identifyError" class="error hidden"></p>
     </div>
   </div>
@@ -391,10 +395,11 @@
       <label style="margin-top:16px;">Tekstikoko</label>
       <div class="text-size-control">
         <button class="size-btn" id="textSizeMinus" type="button" aria-label="Pienempi">−</button>
-        <div class="size-value" id="textSizeValue">100 %</div>
+        <div class="size-value" id="textSizeValue">0 %</div>
         <button class="size-btn" id="textSizePlus" type="button" aria-label="Suurempi">+</button>
       </div>
-      <input type="range" id="textSizeSlider" min="75" max="150" step="5" value="100">
+      <input type="range" id="textSizeSlider" min="-25" max="20" step="5" value="0">
+      <p class="muted" style="text-align:center; margin-top:8px;">0 % = oletuskoko</p>
       <div class="modal-actions"><button class="secondary" id="settingsCloseBtn" type="button">Sulje</button></div>
     </div>
   </div>
@@ -427,7 +432,7 @@
     const db = getDatabase(app);
     const auth = getAuth(app);
     const $ = id => document.getElementById(id);
-    const APP_VERSION = '1.2.0';
+    const APP_VERSION = '1.3.0';
     const MAX_POINT_DIFF = 5;
     const ID_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
@@ -437,7 +442,7 @@
     let currentPlayerName = null;
     let unsubscribeEvent = null;
     let activeTab = 'players';
-    let uiScalePercent = 100;
+    let uiScaleAdjust = 0;
     let managingPlayersList = [];
     let tvMode = false;
     let currentView = 'view-home';
@@ -480,19 +485,20 @@
     }
     if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', updateThemeColorMeta);
 
-    function applyUiScale(percent) {
-      percent = Math.max(75, Math.min(150, Math.round(percent / 5) * 5));
-      uiScalePercent = percent;
-      document.documentElement.style.setProperty('--text-scale', String(percent / 100));
-      safeSet('APP_ui_scale', String(percent));
+    function applyUiScale(adj) {
+      adj = Math.max(-25, Math.min(20, Math.round(adj / 5) * 5));
+      uiScaleAdjust = adj;
+      const multiplier = (100 + adj) / 100;
+      document.documentElement.style.setProperty('--text-scale', String(multiplier));
+      safeSet('APP_ui_scale', String(adj));
       updateUiScaleDisplay();
     }
     function updateUiScaleDisplay() {
       const v = $('textSizeValue'), s = $('textSizeSlider'), minus = $('textSizeMinus'), plus = $('textSizePlus');
-      if (v) v.textContent = uiScalePercent + ' %';
-      if (s) s.value = uiScalePercent;
-      if (minus) minus.disabled = uiScalePercent <= 75;
-      if (plus) plus.disabled = uiScalePercent >= 150;
+      if (v) v.textContent = (uiScaleAdjust > 0 ? '+' : '') + uiScaleAdjust + ' %';
+      if (s) s.value = uiScaleAdjust;
+      if (minus) minus.disabled = uiScaleAdjust <= -25;
+      if (plus) plus.disabled = uiScaleAdjust >= 20;
     }
 
     function showLoading(msg) { $('loadingOverlay').classList.remove('hidden'); $('loadingMessage').textContent = msg || 'Ladataan...'; }
@@ -518,11 +524,26 @@
       });
     }
 
+    function setTopbar(name, code) {
+      const textEl = $('topbarTitleText');
+      const codeEl = $('topbarTitleCode');
+      if (textEl) textEl.textContent = name || '🎾 3 Erää';
+      if (codeEl) {
+        if (code) { codeEl.textContent = code; codeEl.classList.remove('hidden'); }
+        else codeEl.classList.add('hidden');
+      }
+    }
+
     function showView(viewId) {
       ['view-home', 'view-create', 'view-event', 'view-manage-players', 'view-standings'].forEach(v => $(v).classList.add('hidden'));
       $(viewId).classList.remove('hidden');
       currentView = viewId;
       $('btnBackTop').classList.toggle('hidden', viewId === 'view-home' || tvMode);
+      if (viewId === 'view-home' || viewId === 'view-create') {
+        setTopbar(null, null);
+      } else if (currentEventData) {
+        setTopbar(currentEventData.name || currentEventData.playerCode, currentEventData.playerCode);
+      }
     }
 
     function generateId() { let id = ''; for (let i = 0; i < 5; i++) id += ID_CHARS[Math.floor(Math.random() * ID_CHARS.length)]; return id; }
@@ -807,8 +828,7 @@
         removeRecentEvent(playerCode);
         if (unsubscribeEvent) { unsubscribeEvent(); unsubscribeEvent = null; }
         currentEventId = null; currentEventData = null; currentRole = null; currentPlayerName = null;
-        playerViewCourtOverride = null; editingRounds.clear(); editingHistory.clear();
-        lastCycleCount = 0;
+        playerViewCourtOverride = null; editingRounds.clear(); editingHistory.clear(); lastCycleCount = 0;
         history.replaceState({}, '', window.location.pathname);
         hideLoading();
         showView('view-home'); renderRecentEvents();
@@ -879,8 +899,8 @@
         upsertRecentEvent({ id: eventId, name: data.name || eventId, role: currentRole, myPlayerName: currentPlayerName, playerCount: (data.playerNames || []).length });
         hideLoading();
         showView('view-event');
-        setupEventTabs();
-        switchTab('players');
+        activeTab = 'players';
+        renderEventView();
         listenEvent(eventId, (d) => {
           if (!d) { alert('Tapahtuma on poistettu.'); window.location.href = window.location.pathname; return; }
           currentEventData = d;
@@ -889,20 +909,9 @@
       } catch(e) { hideLoading(); alert('Virhe: ' + e.message); }
     }
 
-    function setupEventTabs() {
-      const tabs = $('eventTabs');
-      tabs.querySelectorAll('.tab').forEach(tab => {
-        const t = tab.getAttribute('data-tab');
-        if (t === 'admin' && currentRole !== 'organizer') tab.classList.add('hidden');
-        else tab.classList.remove('hidden');
-        tab.onclick = () => switchTab(t);
-      });
-    }
-
     function switchTab(tab) {
       if (tab === 'admin' && currentRole !== 'organizer') tab = 'players';
       activeTab = tab;
-      $('eventTabs').querySelectorAll('.tab').forEach(el => el.classList.toggle('active', el.getAttribute('data-tab') === tab));
       $('tabContentPlayers').classList.toggle('hidden', tab !== 'players');
       $('tabContentAdmin').classList.toggle('hidden', tab !== 'admin');
       $('tabContentHistory').classList.toggle('hidden', tab !== 'history');
@@ -914,6 +923,7 @@
       select.innerHTML = '<option value="">-- Valitse nimesi --</option>';
       (currentEventData?.playerNames || []).forEach(n => { const o = document.createElement('option'); o.value = n; o.textContent = n; select.appendChild(o); });
       $('identifyError').classList.add('hidden');
+      $('btnIdentifySkip').classList.toggle('hidden', currentRole !== 'organizer');
       openModal('identifyModal');
     }
 
@@ -921,26 +931,19 @@
       if (!currentEventData) return;
       const d = currentEventData;
       const cycleCount = (d.previousCycles || []).length;
-      if (cycleCount !== lastCycleCount) {
-        lastCycleCount = cycleCount;
-        playerViewCourtOverride = null;
-      }
-      $('eventNameDisplay').textContent = d.name || d.playerCode || 'Tapahtuma';
+      if (cycleCount !== lastCycleCount) { lastCycleCount = cycleCount; playerViewCourtOverride = null; }
+      setTopbar(d.name || d.playerCode || 'Tapahtuma', d.playerCode || currentEventId);
       const st = computeRoundStatus(d);
       const roleLabel = currentRole === 'organizer' ? 'Järjestäjä' : 'Pelaaja';
       const nameStr = currentPlayerName ? `${currentPlayerName} · ${roleLabel}` : roleLabel;
       $('eventStatusDisplay').innerHTML = st.completed
         ? `<strong>✅ Kierros valmis</strong> · ${st.totalEntered}/${st.total} tulosta · ${nameStr}`
         : `<strong>Kierros ${st.currentRound}/3</strong> · ${st.totalEntered}/${st.total} tulosta · ${nameStr}`;
-      $('topbarTitle').textContent = d.name || '3 Erää';
       renderTabPlayers();
       renderTabAdmin();
       renderTabHistory();
     }
 
-    // ============================================================
-    // PLAYERS TAB (court selector removed - now in hamburger)
-    // ============================================================
     function renderTabPlayers() {
       const container = $('tabContentPlayers');
       container.innerHTML = '';
@@ -969,7 +972,6 @@
         if (playerViewCourtOverride !== null && (d.courts || []).some(c => c.courtIndex === playerViewCourtOverride)) {
           selectedIdx = playerViewCourtOverride;
         }
-
         const selectedCourt = d.courts.find(c => c.courtIndex === selectedIdx);
         if (selectedCourt) {
           const isMine = selectedIdx === myCourtIdx;
@@ -984,7 +986,6 @@
         return;
       }
 
-      // Organizer: all courts, own first
       const sorted = [...(d.courts || [])];
       if (myCourtIdx >= 0) {
         sorted.sort((a, b) => {
@@ -994,9 +995,7 @@
           return a.courtNumber - b.courtNumber;
         });
       }
-      sorted.forEach(court => {
-        container.appendChild(buildCourtCard(court, court.courtIndex === myCourtIdx, court.courtIndex === restIdx));
-      });
+      sorted.forEach(court => { container.appendChild(buildCourtCard(court, court.courtIndex === myCourtIdx, court.courtIndex === restIdx)); });
     }
 
     async function saveRoundResult(courtIdx, roundIdx, s1, s2) {
@@ -1058,17 +1057,13 @@
       card.innerHTML = html;
       card.querySelectorAll('[data-edit-court]').forEach(el => {
         el.onclick = () => {
-          const c = el.getAttribute('data-edit-court');
-          const r = el.getAttribute('data-edit-round');
-          editingRounds.add(`${c}-${r}`);
+          editingRounds.add(`${el.getAttribute('data-edit-court')}-${el.getAttribute('data-edit-round')}`);
           renderTabPlayers();
         };
       });
       card.querySelectorAll('.score-cancel').forEach(el => {
         el.onclick = () => {
-          const c = el.getAttribute('data-court');
-          const r = el.getAttribute('data-round');
-          editingRounds.delete(`${c}-${r}`);
+          editingRounds.delete(`${el.getAttribute('data-court')}-${el.getAttribute('data-round')}`);
           renderTabPlayers();
         };
       });
@@ -1082,24 +1077,19 @@
           const s2 = parseInt(inputs[1].value);
           if (isNaN(s1) || isNaN(s2) || s1 < 0 || s2 < 0 || s1 > 99 || s2 > 99) { alert('Syötä molemmat pisteet (0–99).'); return; }
           if (s1 === s2) { alert('Erässä ei voi olla tasapeliä.'); return; }
-          submitBtn.disabled = true;
-          submitBtn.textContent = 'Tallennetaan...';
+          submitBtn.disabled = true; submitBtn.textContent = 'Tallennetaan...';
           try {
             await saveRoundResult(cIdx, r, s1, s2);
             editingRounds.delete(`${cIdx}-${r}`);
           } catch(e) {
             alert('Virhe: ' + e.message);
-            submitBtn.disabled = false;
-            submitBtn.textContent = 'Tallenna tulos';
+            submitBtn.disabled = false; submitBtn.textContent = 'Tallenna tulos';
           }
         };
       }
       return card;
     }
 
-    // ============================================================
-    // ADMIN TAB (delete event replaces leave event)
-    // ============================================================
     function renderTabAdmin() {
       if (currentRole !== 'organizer') return;
       const container = $('tabContentAdmin');
@@ -1119,7 +1109,11 @@
       html += `<div class="code-block" style="background:var(--warn-bg);">
         <div class="label" style="color:var(--warn-fg);">🔐 Järjestäjäkoodi (vain järjestäjille)</div>
         <div class="code-display" style="color:var(--warn-fg);">${d.organizerCode}</div>
-        <button id="btnCopyOrganizerCode" class="secondary small" type="button">Kopioi järjestäjäkoodi</button>
+        <div class="row" style="gap:6px;">
+          <button id="btnCopyOrganizerCode" class="secondary small" type="button" style="flex:1;">Kopioi koodi</button>
+          <button id="btnCopyOrganizerLink" class="secondary small" type="button" style="flex:1;">Kopioi hallintalinkki</button>
+        </div>
+        <p class="muted" style="margin-top:6px;">Hallintalinkki avaa tapahtuman suoraan järjestäjänä.</p>
       </div>`;
       if (st.completed) {
         html += `<div class="success-box" style="margin-bottom:8px;">✅ Kaikki tulokset syötetty!</div>
@@ -1141,6 +1135,10 @@
       $('btnShowShare').onclick = () => openShareModal();
       $('btnCopyPlayerCodeAdmin').onclick = () => copyText(d.playerCode, 'Pelaajakoodi kopioitu');
       $('btnCopyOrganizerCode').onclick = () => copyText(d.organizerCode, 'Järjestäjäkoodi kopioitu');
+      $('btnCopyOrganizerLink').onclick = () => {
+        const url = `${location.origin}${location.pathname}?admin=${encodeURIComponent(d.organizerCode)}`;
+        copyText(url, 'Hallintalinkki kopioitu');
+      };
       if (st.completed) $('btnCalculateRound').onclick = () => showStandings();
       $('btnManagePlayers').onclick = () => openManagePlayers();
       $('btnOpenTV').onclick = () => {
@@ -1234,14 +1232,14 @@
       });
       container.querySelectorAll('[data-hist-edit-cycle]').forEach(el => {
         el.onclick = () => {
-          const k = `${el.getAttribute('data-hist-edit-cycle')}-${el.getAttribute('data-hist-edit-court')}-${el.getAttribute('data-hist-edit-round')}`;
-          editingHistory.add(k); renderTabHistory();
+          editingHistory.add(`${el.getAttribute('data-hist-edit-cycle')}-${el.getAttribute('data-hist-edit-court')}-${el.getAttribute('data-hist-edit-round')}`);
+          renderTabHistory();
         };
       });
       container.querySelectorAll('[data-hist-cancel-cycle]').forEach(el => {
         el.onclick = () => {
-          const k = `${el.getAttribute('data-hist-cancel-cycle')}-${el.getAttribute('data-hist-cancel-court')}-${el.getAttribute('data-hist-cancel-round')}`;
-          editingHistory.delete(k); renderTabHistory();
+          editingHistory.delete(`${el.getAttribute('data-hist-cancel-cycle')}-${el.getAttribute('data-hist-cancel-court')}-${el.getAttribute('data-hist-cancel-round')}`);
+          renderTabHistory();
         };
       });
       container.querySelectorAll('[data-hist-save-cycle]').forEach(el => {
@@ -1328,9 +1326,6 @@
       container.innerHTML = html;
     }
 
-    // ============================================================
-    // MANAGE PLAYERS
-    // ============================================================
     function openManagePlayers() {
       if (currentRole !== 'organizer' || !currentEventData) return;
       managingPlayersList = [...(currentEventData.playerNames || [])];
@@ -1392,11 +1387,7 @@
         let newRestDir = "up";
         if (count5pCourts(newCourts) === 1 && findRestCourtIndex(newCourts) === 0) newRestDir = "down";
         const oldRounds = currentEventData.rounds || [];
-        const newRounds = [
-          { roundIndex: 0, results: {} },
-          { roundIndex: 1, results: {} },
-          { roundIndex: 2, results: {} }
-        ];
+        const newRounds = [{ roundIndex: 0, results: {} }, { roundIndex: 1, results: {} }, { roundIndex: 2, results: {} }];
         newCourts.forEach((newCourt, i) => {
           const oldCourt = (currentEventData.courts || [])[i];
           if (!oldCourt) return;
@@ -1408,9 +1399,7 @@
             }
           }
         });
-        await update(ref(db, 'events/' + currentEventId), {
-          playerNames: managingPlayersList, courts: newCourts, rounds: newRounds, restDirection: newRestDir
-        });
+        await update(ref(db, 'events/' + currentEventId), { playerNames: managingPlayersList, courts: newCourts, rounds: newRounds, restDirection: newRestDir });
         if (currentPlayerName && !managingPlayersList.includes(currentPlayerName)) {
           currentPlayerName = null;
           const entry = getEventEntry(currentEventId);
@@ -1425,9 +1414,6 @@
       }
     }
 
-    // ============================================================
-    // STANDINGS
-    // ============================================================
     function showStandings() {
       if (!currentEventData) return;
       showView('view-standings');
@@ -1474,9 +1460,6 @@
       } catch(e) { hideLoading(); alert('Virhe: ' + e.message); }
     }
 
-    // ============================================================
-    // TV
-    // ============================================================
     function initTVMode() {
       tvMode = true;
       document.body.classList.add('tv-mode');
@@ -1521,35 +1504,41 @@
       $('tvStandings').innerHTML = stHtml;
     }
 
-    // ============================================================
-    // HAMBURGER MENU
-    // ============================================================
     function openHamburger() {
       const content = $('hamburgerContent');
       let html = '';
+      const inEvent = currentEventId && currentEventData;
 
-      // Contextual player items
-      if (currentEventId && currentEventData && currentRole === 'player' && currentPlayerName) {
-        const d = currentEventData;
-        const myCourtIdx = (d.courts || []).find(c => c.players.includes(currentPlayerName))?.courtIndex ?? -1;
-        let selectedIdx = myCourtIdx >= 0 ? myCourtIdx : (d.courts[0]?.courtIndex ?? 0);
-        if (playerViewCourtOverride !== null && (d.courts || []).some(c => c.courtIndex === playerViewCourtOverride)) {
-          selectedIdx = playerViewCourtOverride;
+      if (inEvent) {
+        html += `<div class="hamburger-section-label">Navigointi</div>`;
+        html += `<button id="hamburgerNavPlayers" class="${activeTab === 'players' ? '' : 'secondary'}" type="button">📋 Kenttä ja tulokset</button>`;
+        const histLabel = currentRole === 'organizer' ? '📊 Koko historia' : '📊 Oma historia';
+        html += `<button id="hamburgerNavHistory" class="${activeTab === 'history' ? '' : 'secondary'}" type="button" style="margin-top:6px;">${histLabel}</button>`;
+        if (currentRole === 'organizer') {
+          html += `<button id="hamburgerNavAdmin" class="${activeTab === 'admin' ? '' : 'secondary'}" type="button" style="margin-top:6px;">⚙️ Hallinta</button>`;
         }
 
-        html += `<div class="hamburger-section-label">Pelikenttä</div>`;
-        html += `<select id="hamburgerCourtSelector">`;
-        (d.courts || []).forEach(c => {
-          const isMine = c.courtIndex === myCourtIdx;
-          html += `<option value="${c.courtIndex}" ${c.courtIndex === selectedIdx ? 'selected' : ''}>K${c.courtNumber}${isMine ? ' (oma)' : ''}</option>`;
-        });
-        html += `</select>`;
+        if (currentRole === 'player' && currentPlayerName) {
+          const d = currentEventData;
+          const myCourtIdx = (d.courts || []).find(c => c.players.includes(currentPlayerName))?.courtIndex ?? -1;
+          let selectedIdx = myCourtIdx >= 0 ? myCourtIdx : (d.courts[0]?.courtIndex ?? 0);
+          if (playerViewCourtOverride !== null && (d.courts || []).some(c => c.courtIndex === playerViewCourtOverride)) {
+            selectedIdx = playerViewCourtOverride;
+          }
+          html += `<div class="hamburger-section-label" style="margin-top:16px;">Pelikenttä</div>`;
+          html += `<select id="hamburgerCourtSelector">`;
+          (d.courts || []).forEach(c => {
+            const isMine = c.courtIndex === myCourtIdx;
+            html += `<option value="${c.courtIndex}" ${c.courtIndex === selectedIdx ? 'selected' : ''}>K${c.courtNumber}${isMine ? ' (oma)' : ''}</option>`;
+          });
+          html += `</select>`;
+        }
 
-        html += `<button id="hamburgerHistoryBtn" class="secondary" type="button" style="margin-top:10px;">📊 Oma historia</button>`;
+        html += `<div class="hamburger-section-label" style="margin-top:16px;">Jakaminen</div>`;
+        html += `<button id="hamburgerShareBtn" class="secondary" type="button">🔗 Jaa pelaajille</button>`;
       }
 
-      // Global items
-      html += `<div class="hamburger-section-label" style="margin-top:${html ? '20px' : '0'};">Asetukset</div>`;
+      html += `<div class="hamburger-section-label" style="margin-top:${html ? '16px' : '0'};">Asetukset</div>`;
       html += `<button id="hamburgerSettingsBtn" class="secondary" type="button">⚙️ Teema ja tekstikoko</button>`;
 
       html += `<div style="text-align:center;margin-top:24px;padding-top:16px;border-top:1px solid var(--border);">
@@ -1558,31 +1547,22 @@
 
       content.innerHTML = html;
 
-      // Wire
-      const courtSel = $('hamburgerCourtSelector');
-      if (courtSel) {
-        courtSel.onchange = (e) => {
-          playerViewCourtOverride = parseInt(e.target.value);
-          closeModal('hamburgerModal');
-          switchTab('players');
-        };
+      if (inEvent) {
+        $('hamburgerNavPlayers').onclick = () => { closeModal('hamburgerModal'); switchTab('players'); };
+        $('hamburgerNavHistory').onclick = () => { closeModal('hamburgerModal'); switchTab('history'); };
+        if ($('hamburgerNavAdmin')) $('hamburgerNavAdmin').onclick = () => { closeModal('hamburgerModal'); switchTab('admin'); };
+        if ($('hamburgerCourtSelector')) {
+          $('hamburgerCourtSelector').onchange = (e) => {
+            playerViewCourtOverride = parseInt(e.target.value);
+            closeModal('hamburgerModal');
+            switchTab('players');
+          };
+        }
+        $('hamburgerShareBtn').onclick = () => { closeModal('hamburgerModal'); openShareModal(); };
       }
-      const histBtn = $('hamburgerHistoryBtn');
-      if (histBtn) {
-        histBtn.onclick = () => {
-          closeModal('hamburgerModal');
-          switchTab('history');
-        };
-      }
-      $('hamburgerSettingsBtn').onclick = () => {
-        closeModal('hamburgerModal');
-        openSettings();
-      };
-      $('hamburgerVersionLink').onclick = (e) => {
-        e.preventDefault();
-        closeModal('hamburgerModal');
-        updateApp();
-      };
+
+      $('hamburgerSettingsBtn').onclick = () => { closeModal('hamburgerModal'); openSettings(); };
+      $('hamburgerVersionLink').onclick = (e) => { e.preventDefault(); closeModal('hamburgerModal'); updateApp(); };
 
       openModal('hamburgerModal');
     }
@@ -1594,9 +1574,6 @@
       openModal('settingsModal');
     }
 
-    // ============================================================
-    // CREATE / JOIN
-    // ============================================================
     function populateSelfSelect() {
       const raw = $('inputPlayerNames').value;
       const names = raw.split('\n').map(s => s.trim()).filter(s => s.length > 0);
@@ -1696,8 +1673,8 @@
 
     $('settingsCloseBtn').onclick = () => closeModal('settingsModal');
     document.querySelectorAll('input[name="uiTheme"]').forEach(r => r.addEventListener('change', () => { if (r.checked) applyTheme(r.value); }));
-    $('textSizeMinus').onclick = () => applyUiScale(uiScalePercent - 5);
-    $('textSizePlus').onclick = () => applyUiScale(uiScalePercent + 5);
+    $('textSizeMinus').onclick = () => applyUiScale(uiScaleAdjust - 5);
+    $('textSizePlus').onclick = () => applyUiScale(uiScaleAdjust + 5);
     $('textSizeSlider').addEventListener('input', (e) => applyUiScale(parseInt(e.target.value, 10)));
     document.querySelectorAll('.modal-overlay').forEach(overlay => overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.classList.add('hidden'); }));
 
@@ -1736,20 +1713,32 @@
     $('btnJoinAsPlayer').onclick = () => handleJoinPlayer();
     $('btnJoinAsOrganizer').onclick = () => handleJoinOrganizer();
 
+    function startEventSession() {
+      closeModal('identifyModal');
+      showView('view-event');
+      activeTab = 'players';
+      lastCycleCount = (currentEventData?.previousCycles || []).length;
+      if (!unsubscribeEvent) {
+        listenEvent(currentEventId, (d) => {
+          if (!d) { alert('Tapahtuma poistettu.'); window.location.href = window.location.pathname; return; }
+          currentEventData = d; renderEventView();
+        });
+      }
+      renderEventView();
+    }
+
     $('btnIdentifyConfirm').onclick = () => {
       const sel = $('identifySelect').value;
       if (!sel) { $('identifyError').textContent = 'Valitse nimesi.'; $('identifyError').classList.remove('hidden'); return; }
       currentPlayerName = sel;
       if (!currentRole) currentRole = 'player';
       upsertRecentEvent({ id: currentEventId, name: currentEventData?.name || currentEventId, role: currentRole, myPlayerName: sel, playerCount: (currentEventData?.playerNames || []).length });
-      closeModal('identifyModal');
-      showView('view-event');
-      setupEventTabs(); switchTab('players');
-      lastCycleCount = (currentEventData?.previousCycles || []).length;
-      listenEvent(currentEventId, (d) => {
-        if (!d) { alert('Tapahtuma poistettu.'); window.location.href = window.location.pathname; return; }
-        currentEventData = d; renderEventView();
-      });
+      startEventSession();
+    };
+    $('btnIdentifySkip').onclick = () => {
+      currentPlayerName = null;
+      upsertRecentEvent({ id: currentEventId, name: currentEventData?.name || currentEventId, role: currentRole, myPlayerName: null, playerCount: (currentEventData?.playerNames || []).length });
+      startEventSession();
     };
 
     $('shareCloseBtn').onclick = () => closeModal('shareModal');
@@ -1782,14 +1771,78 @@
       } catch(e) { hideLoading(); alert('Päivitys epäonnistui: ' + e.message); }
     }
 
+    // ============================================================
+    // INIT (with URL routing)
+    // ============================================================
     (async function init() {
-      try { const stored = safeGet('APP_ui_scale'); if (stored) { const n = parseFloat(stored); if (n >= 75 && n <= 150) uiScalePercent = n; } } catch(e) {}
-      updateUiScaleDisplay(); updateThemeColorMeta();
+      try {
+        const stored = safeGet('APP_ui_scale');
+        if (stored) {
+          const n = parseFloat(stored);
+          if (!isNaN(n)) {
+            if (n >= -25 && n <= 20) uiScaleAdjust = Math.round(n / 5) * 5;
+            else if (n >= 75 && n <= 150) uiScaleAdjust = Math.max(-25, Math.min(20, Math.round((n - 100) / 5) * 5));
+            else if (n > 0 && n <= 2) uiScaleAdjust = Math.max(-25, Math.min(20, Math.round((Math.round(n * 100) - 100) / 5) * 5));
+          }
+        }
+      } catch(e) {}
+      applyUiScale(uiScaleAdjust);
+      updateThemeColorMeta();
+
       const urlParams = new URLSearchParams(window.location.search);
       const isTV = urlParams.get('tv') === '1';
+      const urlCode = normalizeCode(urlParams.get('event') || urlParams.get('admin') || '');
+
       try { showLoading('Yhdistetään...'); await ensureAuth(); hideLoading(); }
       catch(e) { hideLoading(); alert('Yhdistäminen epäonnistui: ' + e.message); return; }
+
       if (isTV) { initTVMode(); return; }
+
+      if (urlCode) {
+        showLoading('Ladataan tapahtumaa...');
+        try {
+          const resolved = await resolveEventCode(urlCode);
+          hideLoading();
+          if (!resolved) {
+            alert('Tapahtumaa ei löytynyt koodilla ' + urlCode);
+            history.replaceState({}, '', window.location.pathname);
+            showView('view-home'); renderRecentEvents(); return;
+          }
+          currentEventId = resolved.eventId;
+          currentEventData = resolved.eventData;
+          currentRole = resolved.role;
+          currentPlayerName = null;
+
+          const entry = getEventEntry(resolved.eventId);
+          if (entry) {
+            currentRole = entry.role || resolved.role;
+            currentPlayerName = entry.myPlayerName || null;
+          }
+
+          lastCycleCount = (resolved.eventData.previousCycles || []).length;
+          playerViewCourtOverride = null;
+
+          if (currentPlayerName && (resolved.eventData.playerNames || []).includes(currentPlayerName)) {
+            await enterEvent(resolved.eventId);
+          } else {
+            upsertRecentEvent({
+              id: resolved.eventId,
+              name: resolved.eventData.name || resolved.eventId,
+              role: currentRole,
+              myPlayerName: null,
+              playerCount: (resolved.eventData.playerNames || []).length
+            });
+            history.replaceState({}, '', window.location.pathname + '?event=' + currentEventId);
+            askIdentify();
+          }
+          return;
+        } catch(e) {
+          hideLoading();
+          alert('Virhe ladattaessa tapahtumaa: ' + e.message);
+          showView('view-home'); renderRecentEvents(); return;
+        }
+      }
+
       showView('view-home');
       renderRecentEvents();
     })();
