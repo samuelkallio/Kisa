@@ -1,8 +1,9 @@
 <!--
   3 Erää - Turnausjärjestelmä
-  Versio: 1.3.0
-  Muutokset: +30% fonttikoko (uusi 0% baseline), URL-reititys, hampurilaisnavigaatio,
-             pelaajakoodi ylätunnisteessa, hallintalinkki, tapahtuman poisto
+  Versio: 1.4.0
+  Muutokset: Historia laskevassa järjestyksessä + sulje-nappula + oikea paluu,
+             koko tapahtuman sijoitukset kenttäkohtaisesti,
+             ylätunnisteen kierrosnumero korjattu
 -->
 <!DOCTYPE html>
 <html lang="fi">
@@ -18,7 +19,6 @@
         var theme = localStorage.getItem('APP_ui_theme') || 'auto';
         if (theme === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
         else if (theme === 'light') document.documentElement.setAttribute('data-theme', 'light');
-
         var stored = localStorage.getItem('APP_ui_scale');
         var adj = 0;
         if (stored) {
@@ -137,6 +137,7 @@
     .standings-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
     .standings-table th, .standings-table td { padding: 6px 4px; text-align: left; border-bottom: 1px solid var(--border); color: var(--text); }
     .standings-table th { font-weight: 700; color: var(--text-muted); }
+    .standings-table tr.me { background: var(--win-bg); font-weight: 700; }
     .arrow-up { color: var(--win-fg); font-weight: 700; }
     .arrow-down { color: var(--danger); font-weight: 700; }
     .arrow-stay { color: var(--text-muted); }
@@ -209,6 +210,7 @@
     .tv-num { text-align: right; font-variant-numeric: tabular-nums; }
     .hamburger-section-label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); font-weight: 700; margin: 16px 0 6px; }
     .hamburger-section-label:first-child { margin-top: 0; }
+    .hist-header { display: flex; align-items: center; justify-content: space-between; }
   </style>
 </head>
 <body>
@@ -256,6 +258,7 @@
         <div class="event-status" id="eventStatusDisplay"></div>
       </div>
       <div id="tabContentPlayers"></div>
+      <div id="tabContentStandings" class="hidden"></div>
       <div id="tabContentAdmin" class="hidden"></div>
       <div id="tabContentHistory" class="hidden"></div>
     </div>
@@ -432,7 +435,7 @@
     const db = getDatabase(app);
     const auth = getAuth(app);
     const $ = id => document.getElementById(id);
-    const APP_VERSION = '1.3.0';
+    const APP_VERSION = '1.4.0';
     const MAX_POINT_DIFF = 5;
     const ID_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
@@ -747,6 +750,52 @@
       return st;
     }
 
+    // Compute whole-event accumulated stats grouped by current court
+    function computeEventStandingsByCourt(eventData) {
+      const { courts, rounds, playerNames, previousCycles } = eventData;
+      const stats = {};
+      (playerNames || []).forEach(p => { stats[p] = { wins: 0, played: 0, pointDiffSum: 0 }; });
+
+      const accumulate = (cycCourts, cycRounds) => {
+        (cycRounds || []).forEach((round, rIdx) => {
+          (cycCourts || []).forEach(court => {
+            const res = round?.results?.[court.courtIndex];
+            if (!res) return;
+            const pair = getRoundPairing(court, rIdx);
+            if (!pair) return;
+            const t1w = res.team1Score > res.team2Score;
+            const diff = capDiff(res.team1Score - res.team2Score);
+            pair.team1.forEach(p => { if (!stats[p]) return; stats[p].played++; if (t1w) stats[p].wins++; stats[p].pointDiffSum += diff; });
+            pair.team2.forEach(p => { if (!stats[p]) return; stats[p].played++; if (!t1w) stats[p].wins++; stats[p].pointDiffSum += -diff; });
+          });
+        });
+      };
+
+      (previousCycles || []).forEach(cycle => accumulate(cycle.courts, cycle.rounds));
+      accumulate(courts, rounds);
+
+      const courtOf = {};
+      (courts || []).forEach(c => (c.players || []).forEach(p => { courtOf[p] = c.courtNumber; }));
+
+      const byCourt = {};
+      (playerNames || []).forEach(p => {
+        const s = stats[p] || { wins: 0, played: 0, pointDiffSum: 0 };
+        const wr = s.played > 0 ? s.wins / s.played : 0;
+        const apd = s.played > 0 ? s.pointDiffSum / s.played : 0;
+        const cNum = courtOf[p] || 999;
+        if (!byCourt[cNum]) byCourt[cNum] = [];
+        byCourt[cNum].push({ name: p, court: cNum, wins: s.wins, played: s.played, winRate: wr, avgPointDiff: apd });
+      });
+
+      Object.keys(byCourt).forEach(k => {
+        byCourt[k].sort((a, b) => {
+          if (Math.abs(b.winRate - a.winRate) > 1e-9) return b.winRate - a.winRate;
+          return b.avgPointDiff - a.avgPointDiff;
+        });
+      });
+      return byCourt;
+    }
+
     function isCycleComplete(eventData) {
       if (!eventData || !eventData.rounds || !eventData.courts) return false;
       if (eventData.courts.length === 0) return false;
@@ -913,6 +962,7 @@
       if (tab === 'admin' && currentRole !== 'organizer') tab = 'players';
       activeTab = tab;
       $('tabContentPlayers').classList.toggle('hidden', tab !== 'players');
+      $('tabContentStandings').classList.toggle('hidden', tab !== 'standings');
       $('tabContentAdmin').classList.toggle('hidden', tab !== 'admin');
       $('tabContentHistory').classList.toggle('hidden', tab !== 'history');
       renderEventView();
@@ -934,12 +984,14 @@
       if (cycleCount !== lastCycleCount) { lastCycleCount = cycleCount; playerViewCourtOverride = null; }
       setTopbar(d.name || d.playerCode || 'Tapahtuma', d.playerCode || currentEventId);
       const st = computeRoundStatus(d);
+      const cycleNumber = cycleCount + 1;
       const roleLabel = currentRole === 'organizer' ? 'Järjestäjä' : 'Pelaaja';
       const nameStr = currentPlayerName ? `${currentPlayerName} · ${roleLabel}` : roleLabel;
       $('eventStatusDisplay').innerHTML = st.completed
-        ? `<strong>✅ Kierros valmis</strong> · ${st.totalEntered}/${st.total} tulosta · ${nameStr}`
-        : `<strong>Kierros ${st.currentRound}/3</strong> · ${st.totalEntered}/${st.total} tulosta · ${nameStr}`;
+        ? `<strong>✅ Kierros ${cycleNumber} valmis</strong> · ${st.totalEntered}/${st.total} tulosta · ${nameStr}`
+        : `<strong>Kierros ${cycleNumber} · Erä ${st.currentRound}/3</strong> · ${st.totalEntered}/${st.total} tulosta · ${nameStr}`;
       renderTabPlayers();
+      renderTabStandings();
       renderTabAdmin();
       renderTabHistory();
     }
@@ -951,13 +1003,11 @@
       const d = currentEventData;
       const num5p = count5pCourts(d.courts || []);
       const restIdx = num5p === 1 ? findRestCourtIndex(d.courts) : -1;
-
       let myCourtIdx = -1;
       if (currentPlayerName) {
         const c = (d.courts || []).find(c => c.players.includes(currentPlayerName));
         if (c) myCourtIdx = c.courtIndex;
       }
-
       if (currentRole === 'player' && !currentPlayerName) {
         const prompt = document.createElement('div');
         prompt.className = 'card';
@@ -966,7 +1016,6 @@
         $('btnInlineIdentify').onclick = () => askIdentify();
         return;
       }
-
       if (currentRole === 'player') {
         let selectedIdx = myCourtIdx >= 0 ? myCourtIdx : (d.courts[0]?.courtIndex ?? 0);
         if (playerViewCourtOverride !== null && (d.courts || []).some(c => c.courtIndex === playerViewCourtOverride)) {
@@ -985,7 +1034,6 @@
         }
         return;
       }
-
       const sorted = [...(d.courts || [])];
       if (myCourtIdx >= 0) {
         sorted.sort((a, b) => {
@@ -996,6 +1044,46 @@
         });
       }
       sorted.forEach(court => { container.appendChild(buildCourtCard(court, court.courtIndex === myCourtIdx, court.courtIndex === restIdx)); });
+    }
+
+    // ============================================================
+    // NEW: Standings tab (event-wide, grouped by court)
+    // ============================================================
+    function renderTabStandings() {
+      const container = $('tabContentStandings');
+      if (!container) return;
+      container.innerHTML = '';
+      if (!currentEventData) return;
+      const d = currentEventData;
+      const totalCycles = (d.previousCycles || []).length;
+      const byCourt = computeEventStandingsByCourt(d);
+      const courtKeys = Object.keys(byCourt).map(k => parseInt(k)).sort((a, b) => a - b);
+
+      let html = `<div class="card"><h2>Sijoitukset – koko tapahtuma</h2>
+        <p class="sub">${totalCycles} päättynyttä kierrosta${totalCycles === 0 ? ' (1. kierros käynnissä)' : ''}. Pelaajat ryhmitelty nykyisen kenttänsä mukaan.</p>`;
+
+      courtKeys.forEach(courtNum => {
+        const players = byCourt[courtNum];
+        if (!players || players.length === 0) return;
+        html += `<div style="margin:16px 0;background:var(--surface-2);padding:10px;border-radius:8px;">
+          <div style="font-weight:700;font-size:1rem;margin-bottom:8px;">Kenttä ${courtNum}</div>
+          <table class="standings-table">
+            <tr><th>#</th><th>Pelaaja</th><th>Voitot</th><th>Piste-ero ka.</th></tr>`;
+        players.forEach((s, i) => {
+          const isMe = currentPlayerName && s.name === currentPlayerName;
+          html += `<tr class="${isMe ? 'me' : ''}">
+            <td>${i + 1}</td>
+            <td><strong>${s.name}</strong></td>
+            <td>${s.wins}/${s.played}</td>
+            <td>${s.avgPointDiff >= 0 ? '+' : ''}${s.avgPointDiff.toFixed(2)}</td>
+          </tr>`;
+        });
+        html += `</table></div>`;
+      });
+
+      html += `<div class="info-box" style="margin-top:12px;">Voitot ja piste-erot lasketaan kaikista pelatuista eristä koko tapahtuman ajalta. Ylemmän kentän pelaajat ovat aina alempaa kenttää korkeammalla.</div>`;
+      html += `</div>`;
+      container.innerHTML = html;
     }
 
     async function saveRoundResult(courtIdx, roundIdx, s1, s2) {
@@ -1148,9 +1236,23 @@
       $('btnDeleteEvent').onclick = () => deleteEvent();
     }
 
+    // ============================================================
+    // HISTORY TAB (reversed order + close button)
+    // ============================================================
     function renderTabHistory() {
       const container = $('tabContentHistory');
       container.innerHTML = '';
+
+      // Close bar (top)
+      const closeCard = document.createElement('div');
+      closeCard.className = 'card hist-header';
+      closeCard.innerHTML = `
+        <div style="font-weight:700;font-size:1.15rem;">Historia</div>
+        <button class="icon-btn" id="histCloseBtn" style="border:1px solid var(--border-strong);background:var(--surface-2);" aria-label="Sulje historia">✕</button>
+      `;
+      container.appendChild(closeCard);
+      $('histCloseBtn').onclick = () => switchTab('players');
+
       if (currentRole === 'organizer') renderFullHistory(container);
       else renderPlayerOwnHistory(container);
     }
@@ -1158,21 +1260,29 @@
     function renderFullHistory(container) {
       const cycles = currentEventData?.previousCycles || [];
       if (cycles.length === 0) {
-        container.innerHTML = '<div class="card"><div class="empty-state"><div class="icon">📊</div><div>Ei vielä päättyneitä kierroksia.</div></div></div>';
+        const empty = document.createElement('div');
+        empty.className = 'card';
+        empty.innerHTML = '<div class="empty-state"><div class="icon">📊</div><div>Ei vielä päättyneitä kierroksia.</div></div>';
+        container.appendChild(empty);
         return;
       }
       const getNextCourts = (idx) => idx + 1 < cycles.length ? cycles[idx + 1].courts || [] : currentEventData.courts || [];
       const intro = document.createElement('div');
       intro.className = 'card';
-      intro.innerHTML = `<h2>${cycles.length} päättynyttä kierrosta</h2><p class="sub">Voit muokata tuloksia. Muutokset päivittävät sijoitukset automaattisesti.</p>`;
+      intro.innerHTML = `<h2>${cycles.length} päättynyttä kierrosta</h2><p class="sub">Uusin ylimpänä. Voit muokata tuloksia – muutokset päivittävät sijoitukset.</p>`;
       container.appendChild(intro);
-      cycles.forEach((cycle, idx) => {
+
+      // Reversed order, keep original idx
+      const indexed = cycles.map((c, i) => ({ cycle: c, idx: i })).reverse();
+
+      indexed.forEach(({ cycle, idx }) => {
         const nextCourts = getNextCourts(idx);
         const nextCourtOf = {};
         nextCourts.forEach(c => (c.players || []).forEach(p => { nextCourtOf[p] = c.courtNumber; }));
         const section = document.createElement('div');
         section.className = 'card';
-        let html = `<h2>Kierros ${idx + 1}</h2>`;
+        const isLatest = idx === cycles.length - 1;
+        let html = `<h2>Kierros ${idx + 1}${isLatest ? ' <span class="tag">uusin</span>' : ''}</h2>`;
         if (cycle.completedAt) html += `<p class="muted">${formatTimestamp(cycle.completedAt)}</p>`;
         (cycle.courts || []).forEach(court => {
           html += `<div style="margin:10px 0; background:var(--surface-2); padding:10px; border-radius:8px;">
@@ -1230,6 +1340,7 @@
         section.innerHTML = html;
         container.appendChild(section);
       });
+
       container.querySelectorAll('[data-hist-edit-cycle]').forEach(el => {
         el.onclick = () => {
           editingHistory.add(`${el.getAttribute('data-hist-edit-cycle')}-${el.getAttribute('data-hist-edit-court')}-${el.getAttribute('data-hist-edit-round')}`);
@@ -1270,18 +1381,26 @@
 
     function renderPlayerOwnHistory(container) {
       if (!currentPlayerName) {
-        container.innerHTML = '<div class="card"><div class="empty-state"><div class="icon">👋</div><div>Valitse ensin nimesi pelaajat-välilehdellä.</div></div></div>';
+        const empty = document.createElement('div');
+        empty.className = 'card';
+        empty.innerHTML = '<div class="empty-state"><div class="icon">👋</div><div>Valitse ensin nimesi pelaajat-välilehdellä.</div></div>';
+        container.appendChild(empty);
         return;
       }
       const cycles = currentEventData?.previousCycles || [];
       let totalWins = 0, totalPlayed = 0, totalDiff = 0;
-      let html = `<div class="card"><h2>${currentPlayerName}</h2><p class="sub">Oma historia</p>`;
+
+      const card = document.createElement('div');
+      card.className = 'card';
+      let html = `<h2>${currentPlayerName}</h2><p class="sub">Oma historia – uusin ylimpänä</p>`;
       if (cycles.length === 0) {
         html += `<div class="muted">Ei vielä päättyneitä kierroksia.</div></div>`;
-        container.innerHTML = html;
+        card.innerHTML = html;
+        container.appendChild(card);
         return;
       }
-      cycles.forEach((cycle, idx) => {
+      const indexed = cycles.map((c, i) => ({ cycle: c, idx: i })).reverse();
+      indexed.forEach(({ cycle, idx }) => {
         const myCourt = (cycle.courts || []).find(c => (c.players || []).includes(currentPlayerName));
         if (!myCourt) return;
         const nextCourts = idx + 1 < cycles.length ? cycles[idx + 1].courts || [] : currentEventData.courts || [];
@@ -1295,9 +1414,10 @@
         else if (newCourt < oldC) badge = `<span class="arrow-up">▲ K${newCourt}</span>`;
         else if (newCourt > oldC) badge = `<span class="arrow-down">▼ K${newCourt}</span>`;
         else badge = `<span class="arrow-stay">→ K${newCourt}</span>`;
+        const isLatest = idx === cycles.length - 1;
         html += `<div style="margin:12px 0; padding-top:12px; border-top:1px solid var(--border);">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-            <strong>Kierros ${idx + 1} – K${oldC}</strong>
+            <strong>Kierros ${idx + 1}${isLatest ? ' <span class="tag">uusin</span>' : ''} – K${oldC}</strong>
             <span>${badge}</span>
           </div>
           <div class="muted" style="font-size:0.82rem;margin-bottom:6px;">${s ? `${s.wins}/${s.played} voittoa · ${s.avgPointDiff >= 0 ? '+' : ''}${s.avgPointDiff.toFixed(2)}` : ''}</div>`;
@@ -1322,8 +1442,9 @@
         html += `</div>`;
       });
       const avg = totalPlayed > 0 ? totalDiff / totalPlayed : 0;
-      html += `<div class="info-box" style="margin-top:12px;"><strong>Yhteensä:</strong> ${totalWins}/${totalPlayed} voittoa · Piste-eron ka. ${avg >= 0 ? '+' : ''}${avg.toFixed(2)}</div></div>`;
-      container.innerHTML = html;
+      html += `<div class="info-box" style="margin-top:12px;"><strong>Yhteensä:</strong> ${totalWins}/${totalPlayed} voittoa · Piste-eron ka. ${avg >= 0 ? '+' : ''}${avg.toFixed(2)}</div>`;
+      card.innerHTML = html;
+      container.appendChild(card);
     }
 
     function openManagePlayers() {
@@ -1473,7 +1594,8 @@
     function renderTVView(d) {
       $('tvTitle').textContent = d.name || d.playerCode || 'Tapahtuma';
       const st = computeRoundStatus(d);
-      $('tvStatus').innerHTML = st.completed ? `✅ Kierros valmis · ${st.totalEntered}/${st.total}` : `Kierros <strong>${st.currentRound}/3</strong> · ${st.totalEntered}/${st.total} tulosta`;
+      const cycleNum = (d.previousCycles || []).length + 1;
+      $('tvStatus').innerHTML = st.completed ? `✅ Kierros ${cycleNum} valmis · ${st.totalEntered}/${st.total}` : `Kierros <strong>${cycleNum}</strong> · Erä ${st.currentRound}/3 · ${st.totalEntered}/${st.total}`;
       const courtsContainer = $('tvCourts');
       courtsContainer.innerHTML = '';
       const num5p = count5pCourts(d.courts || []);
@@ -1496,7 +1618,7 @@
       });
       const standings = computeStandings(d);
       const top10 = standings.slice(0, 10);
-      let stHtml = `<h2>Sijoitukset</h2><table class="tv-table"><thead><tr><th>#</th><th>Pelaaja</th><th class="tv-num">Voitot</th><th class="tv-num">Piste-ero</th></tr></thead><tbody>`;
+      let stHtml = `<h2>Sijoitukset – koko tapahtuma</h2><table class="tv-table"><thead><tr><th>#</th><th>Pelaaja</th><th class="tv-num">Voitot</th><th class="tv-num">Piste-ero</th></tr></thead><tbody>`;
       top10.forEach((s, i) => {
         stHtml += `<tr class="${i < 3 ? 'top' : ''}"><td>${i+1}</td><td>${s.name}</td><td class="tv-num">${s.wins}/${s.played}</td><td class="tv-num">${s.avgPointDiff >= 0 ? '+' : ''}${s.avgPointDiff.toFixed(2)}</td></tr>`;
       });
@@ -1512,6 +1634,7 @@
       if (inEvent) {
         html += `<div class="hamburger-section-label">Navigointi</div>`;
         html += `<button id="hamburgerNavPlayers" class="${activeTab === 'players' ? '' : 'secondary'}" type="button">📋 Kenttä ja tulokset</button>`;
+        html += `<button id="hamburgerNavStandings" class="${activeTab === 'standings' ? '' : 'secondary'}" type="button" style="margin-top:6px;">🏆 Sijoitukset</button>`;
         const histLabel = currentRole === 'organizer' ? '📊 Koko historia' : '📊 Oma historia';
         html += `<button id="hamburgerNavHistory" class="${activeTab === 'history' ? '' : 'secondary'}" type="button" style="margin-top:6px;">${histLabel}</button>`;
         if (currentRole === 'organizer') {
@@ -1549,6 +1672,7 @@
 
       if (inEvent) {
         $('hamburgerNavPlayers').onclick = () => { closeModal('hamburgerModal'); switchTab('players'); };
+        $('hamburgerNavStandings').onclick = () => { closeModal('hamburgerModal'); switchTab('standings'); };
         $('hamburgerNavHistory').onclick = () => { closeModal('hamburgerModal'); switchTab('history'); };
         if ($('hamburgerNavAdmin')) $('hamburgerNavAdmin').onclick = () => { closeModal('hamburgerModal'); switchTab('admin'); };
         if ($('hamburgerCourtSelector')) {
@@ -1678,11 +1802,16 @@
     $('textSizeSlider').addEventListener('input', (e) => applyUiScale(parseInt(e.target.value, 10)));
     document.querySelectorAll('.modal-overlay').forEach(overlay => overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.classList.add('hidden'); }));
 
+    // Back arrow logic: from non-players tab → go to players tab. From players tab → go home.
     $('btnBackTop').onclick = () => {
       if (currentView === 'view-event') {
+        if (activeTab !== 'players') {
+          switchTab('players');
+          return;
+        }
         if (unsubscribeEvent) { unsubscribeEvent(); unsubscribeEvent = null; }
         currentEventId = null; currentEventData = null; currentRole = null; currentPlayerName = null;
-        playerViewCourtOverride = null; editingRounds.clear();
+        playerViewCourtOverride = null; editingRounds.clear(); editingHistory.clear();
         history.replaceState({}, '', window.location.pathname);
         showView('view-home'); renderRecentEvents();
       } else if (currentView === 'view-manage-players') { showView('view-event'); switchTab('admin'); }
@@ -1772,7 +1901,7 @@
     }
 
     // ============================================================
-    // INIT (with URL routing)
+    // INIT
     // ============================================================
     (async function init() {
       try {
