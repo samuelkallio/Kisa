@@ -1,8 +1,9 @@
 <!--
   3 Erää - Turnausjärjestelmä
-  Versio: 1.6.0
-  Muutokset: TV-näkymä skaalautuu aina näytölle ilman vieritystä,
-             sijoitukset näyttävät eräkohtaisen sijoituskehityksen
+  Versio: 1.7.0
+  Muutokset: TV-näkymä uudelleensuunniteltu – transform: scale() (ei zoom),
+             auto-fit grid -asettelu, useampi sarake, optimaalinen leveys,
+             fit-to-screen ilman ylivuotoa
 -->
 <!DOCTYPE html>
 <html lang="fi">
@@ -188,152 +189,227 @@
     @keyframes spin { to { transform: rotate(360deg); } }
 
     /* ============================================================
-       TV VIEW – fit-to-screen, no scroll
+       TV VIEW – redesigned fit-to-screen with transform: scale()
        ============================================================ */
     #view-tv {
       display: none;
       position: fixed;
       inset: 0;
       background: #0a0a0f;
-      color: #fff;
       overflow: hidden;
       z-index: 1;
     }
-    .tv-fit-wrap {
-      position: absolute;
-      inset: 0;
-      overflow: hidden;
-    }
     #tvFit {
       position: absolute;
-      top: 0; left: 0;
-      width: 100%;
+      top: 0;
+      left: 0;
+      min-width: 100%;
       min-height: 100%;
       display: flex;
       flex-direction: column;
-      gap: 1.5vmin;
-      padding: 1.5vmin;
-      box-sizing: border-box;
+      gap: 1vmin;
+      padding: 1vmin;
       background: #0a0a0f;
       color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       transform-origin: 0 0;
+      will-change: transform;
     }
+
     .tv-top {
+      flex-shrink: 0;
       display: flex;
       justify-content: space-between;
-      align-items: flex-start;
+      align-items: center;
       gap: 1.5vmin;
-      padding-bottom: 1vmin;
+      padding-bottom: 0.8vmin;
       border-bottom: 2px solid #2a2a3a;
-      flex-shrink: 0;
     }
     .tv-top-info { flex: 1; min-width: 0; }
-    .tv-title { font-size: clamp(16px, 2.6vmin, 34px); font-weight: 800; margin: 0 0 0.4vmin; color: #fff; line-height: 1.1; }
-    .tv-status { font-size: clamp(11px, 1.6vmin, 20px); color: #9aa1b1; }
+    .tv-title {
+      font-size: clamp(22px, 3.2vmin, 52px);
+      font-weight: 800;
+      line-height: 1.1;
+      color: #fff;
+      margin: 0 0 0.2em;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .tv-status {
+      font-size: clamp(13px, 1.9vmin, 26px);
+      color: #9aa1b1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
     .tv-status strong { color: #7d8bff; }
-    .tv-qr { flex-shrink: 0; text-align: center; }
+    .tv-qr {
+      flex-shrink: 0;
+      text-align: center;
+    }
     .tv-qr img {
       display: block;
       background: white;
-      padding: 0.6vmin;
+      padding: 0.5vmin;
       border-radius: 6px;
-      width: clamp(70px, 12vmin, 160px);
-      height: clamp(70px, 12vmin, 160px);
+      width: clamp(64px, 10vmin, 130px);
+      height: clamp(64px, 10vmin, 130px);
       object-fit: contain;
     }
-    .tv-qr-label { font-size: clamp(8px, 1vmin, 14px); color: #9aa1b1; margin-top: 0.4vmin; }
+    .tv-qr-label {
+      font-size: clamp(8px, 1.1vmin, 14px);
+      color: #9aa1b1;
+      margin-top: 0.3vmin;
+      white-space: nowrap;
+    }
 
-    .tv-main {
+    .tv-content {
       flex: 1;
       min-height: 0;
       display: grid;
-      grid-template-columns: 1fr;
-      gap: 1.5vmin;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 1vmin;
     }
-    .tv-main-left, .tv-main-right {
+    @media (min-aspect-ratio: 4/5) {
+      .tv-content {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      }
+    }
+
+    .tv-section {
+      min-width: 0;
       min-height: 0;
-      overflow: hidden;
       display: flex;
       flex-direction: column;
-    }
-    .tv-courts, .tv-standings {
-      flex: 1;
-      min-height: 0;
+      gap: 0.6vmin;
       overflow: hidden;
+    }
+    .tv-section-title {
+      flex-shrink: 0;
+      font-size: clamp(11px, 1.5vmin, 18px);
+      font-weight: 800;
+      color: #7d8bff;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
     }
 
     .tv-courts {
-      display: flex;
-      flex-direction: column;
-      gap: 1.2vmin;
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
+      gap: 0.6vmin;
+      align-content: start;
+      overflow: hidden;
     }
     .tv-court {
       background: #171a22;
-      border-radius: 10px;
-      padding: 1.2vmin 1.6vmin;
-      border-left: 4px solid #7d8bff;
-      flex-shrink: 0;
+      border-radius: 8px;
+      padding: 0.7vmin 0.9vmin;
+      border-left: 3px solid #7d8bff;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 0.2vmin;
     }
     .tv-court.rest { border-left-color: #fbd38d; }
-    .tv-court-title { font-size: clamp(11px, 1.5vmin, 18px); font-weight: 800; margin-bottom: 0.8vmin; color: #fff; }
-    .tv-round {
-      padding: 0.6vmin 1vmin;
-      margin: 0.4vmin 0;
-      background: #1f232e;
-      border-radius: 6px;
-      font-size: clamp(9px, 1.2vmin, 15px);
-      line-height: 1.25;
+    .tv-court-title {
+      font-size: clamp(11px, 1.6vmin, 20px);
+      font-weight: 800;
+      color: #fff;
+      margin-bottom: 0.2vmin;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
-    .tv-round.done { background: #16351f; border-left: 3px solid #7ee2a0; }
-    .tv-round.pending { background: #2a2410; border-left: 3px solid #ffd27a; }
-    .tv-round .teams { font-weight: 600; }
-    .tv-round .result { color: #7ee2a0; font-weight: 800; margin-left: 0.6vmin; }
-
-    .tv-standings {
-      background: #171a22;
-      border-radius: 10px;
-      padding: 1.2vmin 1.6vmin;
+    .tv-round {
+      padding: 0.4vmin 0.6vmin;
+      background: #1f232e;
+      border-radius: 4px;
+      font-size: clamp(10px, 1.4vmin, 17px);
+      line-height: 1.25;
+      min-width: 0;
       overflow: hidden;
     }
-    .tv-standings h2 { font-size: clamp(12px, 1.7vmin, 20px); margin: 0 0 1vmin; color: #fff; }
-    .tv-court-standings { margin-bottom: 1.5vmin; }
-    .tv-court-standings:last-child { margin-bottom: 0; }
+    .tv-round.done { background: #16351f; border-left: 2px solid #7ee2a0; }
+    .tv-round.pending { background: #2a2410; border-left: 2px solid #ffd27a; }
+    .tv-round .teams {
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .tv-round .result { color: #7ee2a0; font-weight: 800; margin-left: 0.4vmin; white-space: nowrap; }
+
+    .tv-standings {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
+      gap: 0.6vmin;
+      align-content: start;
+      overflow: hidden;
+    }
+    .tv-court-standings {
+      background: #171a22;
+      border-radius: 8px;
+      padding: 0.7vmin 0.9vmin;
+      min-width: 0;
+      overflow: hidden;
+    }
     .tv-court-standings-title {
-      font-size: clamp(10px, 1.3vmin, 15px);
+      font-size: clamp(11px, 1.4vmin, 16px);
       font-weight: 800;
       color: #7d8bff;
-      margin-bottom: 0.5vmin;
       text-transform: uppercase;
       letter-spacing: 0.05em;
+      margin-bottom: 0.3vmin;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
-    .tv-table { width: 100%; border-collapse: collapse; font-size: clamp(9px, 1.2vmin, 15px); table-layout: auto; }
+    .tv-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: clamp(10px, 1.3vmin, 15px);
+      table-layout: fixed;
+    }
     .tv-table th {
       text-align: left;
       color: #9aa1b1;
-      padding: 0.4vmin 0.6vmin;
+      padding: 0.25vmin 0.35vmin;
       border-bottom: 1px solid #2a2f3c;
-      font-size: clamp(8px, 1vmin, 12px);
+      font-size: clamp(9px, 1.1vmin, 13px);
       text-transform: uppercase;
-      letter-spacing: 0.05em;
+      letter-spacing: 0.03em;
       white-space: nowrap;
+      font-weight: 700;
     }
+    .tv-table th:first-child { width: 1.8em; }
+    .tv-table th:nth-child(2) { width: auto; }
+    .tv-table th:nth-child(3),
+    .tv-table th:nth-child(4) { width: 3.2em; text-align: right; }
+    .tv-table th:last-child { width: 4.2em; text-align: center; }
     .tv-table td {
-      padding: 0.4vmin 0.6vmin;
+      padding: 0.25vmin 0.35vmin;
       border-bottom: 1px solid #2a2f3c;
       color: #fff;
       white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
+    .tv-table td:nth-child(2) { overflow: hidden; text-overflow: ellipsis; }
     .tv-table tr.top { background: #1e2440; font-weight: 700; }
     .tv-num { text-align: right; font-variant-numeric: tabular-nums; }
-    .tv-prog { font-family: ui-monospace, monospace; color: #9aa1b1; font-size: clamp(8px, 1.1vmin, 13px); }
-    .tv-prog .cur { color: #7ee2a0; font-weight: 800; }
-
-    .tv-legend { font-size: clamp(8px, 1vmin, 12px); color: #6b7280; margin-top: 0.8vmin; }
-
-    /* Landscape: 2 columns */
-    @media (orientation: landscape) {
-      .tv-main { grid-template-columns: 1fr 1fr; }
+    .tv-prog {
+      font-family: ui-monospace, monospace;
+      color: #9aa1b1;
+      text-align: center;
+      font-size: clamp(9px, 1.15vmin, 13px);
+      overflow: hidden;
     }
+    .tv-prog .sep { color: #4a5568; }
 
     .hamburger-section-label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); font-weight: 700; margin: 16px 0 6px; }
     .hamburger-section-label:first-child { margin-top: 0; }
@@ -417,25 +493,25 @@
   </div>
 
   <!-- ============================================================
-       TV VIEW – fit-to-screen, no scroll
+       TV VIEW
        ============================================================ -->
   <div id="view-tv">
-    <div class="tv-fit-wrap">
-      <div id="tvFit">
-        <div class="tv-top">
-          <div class="tv-top-info">
-            <div class="tv-title" id="tvTitle">Kisa</div>
-            <div class="tv-status" id="tvStatus">Ladataan...</div>
-          </div>
-          <div class="tv-qr" id="tvQr"></div>
+    <div id="tvFit">
+      <div class="tv-top">
+        <div class="tv-top-info">
+          <div class="tv-title" id="tvTitle">Kisa</div>
+          <div class="tv-status" id="tvStatus">Ladataan...</div>
         </div>
-        <div class="tv-main">
-          <div class="tv-main-left">
-            <div class="tv-courts" id="tvCourts"></div>
-          </div>
-          <div class="tv-main-right">
-            <div class="tv-standings" id="tvStandings"></div>
-          </div>
+        <div class="tv-qr" id="tvQr"></div>
+      </div>
+      <div class="tv-content">
+        <div class="tv-section">
+          <div class="tv-section-title">Kentät</div>
+          <div class="tv-courts" id="tvCourts"></div>
+        </div>
+        <div class="tv-section">
+          <div class="tv-section-title">Sijoitukset – koko tapahtuma</div>
+          <div class="tv-standings" id="tvStandings"></div>
         </div>
       </div>
     </div>
@@ -578,7 +654,7 @@
     const db = getDatabase(app);
     const auth = getAuth(app);
     const $ = id => document.getElementById(id);
-    const APP_VERSION = '1.6.0';
+    const APP_VERSION = '1.7.0';
     const MAX_POINT_DIFF = 5;
     const ID_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
@@ -894,8 +970,6 @@
       return st;
     }
 
-    // Compute standings grouped by current court, optionally up to a specific erä of current cycle
-    // upToEräIdx: undefined = all available, or 0/1/2 = only that erä of current cycle
     function computeEventStandingsByCourt(eventData, upToEräIdx) {
       const { courts, rounds, playerNames, previousCycles } = eventData;
       const stats = {};
@@ -943,8 +1017,6 @@
       return Object.keys(round.results).length > 0;
     }
 
-    // Returns { playerName: [placementAfterErä1, placementAfterErä2, placementAfterErä3] }
-    // null means that erä not yet completed for their court
     function computePlacementProgression(eventData) {
       const { playerNames } = eventData;
       const result = {};
@@ -1737,7 +1809,7 @@
     }
 
     // ============================================================
-    // TV MODE
+    // TV MODE – redesigned
     // ============================================================
     function initTVMode() {
       tvMode = true;
@@ -1759,7 +1831,7 @@
         const qr = qrcode(0, 'M');
         qr.addData(url);
         qr.make();
-        container.innerHTML = `${qr.createImgTag(6, 0)}<div class="tv-qr-label">Liity pelaajana</div>`;
+        container.innerHTML = `${qr.createImgTag(5, 0)}<div class="tv-qr-label">Liity pelaajana</div>`;
         tvQrGenerated = true;
       } catch(e) {
         console.warn('TV QR -virhe', e);
@@ -1785,12 +1857,12 @@
       (d.courts || []).forEach((court, i) => {
         const div = document.createElement('div');
         div.className = 'tv-court' + (i === restIdx ? ' rest' : '');
-        let html = `<div class="tv-court-title">Kenttä ${court.courtNumber}${i === restIdx ? ' <span style="color:#fbd38d;font-weight:600;">(tauko)</span>' : ''}</div>`;
+        let html = `<div class="tv-court-title">Kenttä ${court.courtNumber}${i === restIdx ? ' · tauko' : ''}</div>`;
         (court.rounds || []).forEach((pair, rIdx) => {
           const res = d.rounds?.[rIdx]?.results?.[court.courtIndex];
           const cls = res ? 'tv-round done' : (rIdx === st.currentRound - 1 ? 'tv-round pending' : 'tv-round');
           html += `<div class="${cls}">
-            <div style="font-size:0.85em;color:#9aa1b1;margin-bottom:0.2em;">Erä ${rIdx+1}${pair.resting ? ` · lepo: ${pair.resting}` : ''}</div>
+            <div style="font-size:0.8em;color:#9aa1b1;">Erä ${rIdx+1}${pair.resting ? ` · ${pair.resting} tauko` : ''}</div>
             <div class="teams">${pair.team1.join(' & ')} <span style="color:#9aa1b1;">vs</span> ${pair.team2.join(' & ')}</div>
             ${res ? `<div class="result">${res.team1Score}–${res.team2Score}</div>` : ''}
           </div>`;
@@ -1799,11 +1871,11 @@
         courtsContainer.appendChild(div);
       });
 
-      // Standings – whole event, by court, with per-erä placement progression
+      // Standings – whole event by court, with per-erä placement progression
       const byCourt = computeEventStandingsByCourt(d);
       const progression = computePlacementProgression(d);
       const courtKeys = Object.keys(byCourt).map(k => parseInt(k)).sort((a, b) => a - b);
-      let stHtml = `<h2>Sijoitukset – koko tapahtuma</h2>`;
+      let stHtml = '';
       courtKeys.forEach(courtNum => {
         if (courtNum === 999) return;
         const players = byCourt[courtNum];
@@ -1812,19 +1884,14 @@
           <div class="tv-court-standings-title">Kenttä ${courtNum}</div>
           <table class="tv-table">
             <thead><tr>
-              <th>#</th>
-              <th>Pelaaja</th>
-              <th class="tv-num">Voitot</th>
-              <th class="tv-num">Ka.</th>
-              <th>Erät 1→2→3</th>
-            </tr></thead>
-            <tbody>`;
+              <th>#</th><th>Pelaaja</th><th class="tv-num">V</th><th class="tv-num">Ka</th><th>Erät</th>
+            </tr></thead><tbody>`;
         players.forEach((s, i) => {
           const isTop = i === 0 && players.length > 1;
           const playedText = s.played > 0 ? `${s.wins}/${s.played}` : '–';
           const diffText = s.played > 0 ? `${s.avgPointDiff >= 0 ? '+' : ''}${s.avgPointDiff.toFixed(1)}` : '–';
           const prog = progression[s.name] || [null, null, null];
-          const progCells = prog.map(p => `<span>${p === null ? '–' : p}</span>`).join('<span style="color:#4a5568;">→</span>');
+          const progCells = prog.map(p => `<span>${p === null ? '–' : p}</span>`).join('<span class="sep">→</span>');
           stHtml += `<tr class="${isTop ? 'top' : ''}">
             <td>${i+1}</td>
             <td>${s.name}</td>
@@ -1835,52 +1902,64 @@
         });
         stHtml += `</tbody></table></div>`;
       });
-      stHtml += `<div class="tv-legend">Erät 1→2→3: pelaajan sijoitus omalla kentällään erän 1, 2 ja 3 jälkeen.</div>`;
       $('tvStandings').innerHTML = stHtml;
 
-      // Fit after render
-      requestAnimationFrame(() => fitTV());
+      requestAnimationFrame(fitTV);
     }
 
+    // ============================================================
+    // FIT-TO-SCREEN using transform: scale() + width compensation
+    // Avoids the overflow bug from zoom + padding
+    // ============================================================
     function fitTV() {
+      const view = $('view-tv');
       const fit = $('tvFit');
-      if (!fit) return;
-      const wrap = fit.parentElement;
-      if (!wrap) return;
+      if (!view || !fit) return;
 
-      // Reset
-      fit.style.zoom = '';
-      fit.style.width = '100%';
+      // Reset to natural layout
+      fit.style.transform = '';
+      fit.style.width = '';
       void fit.offsetHeight;
 
-      const availH = wrap.clientHeight;
-      let needH = fit.scrollHeight;
-      if (needH <= availH + 1) return;
+      const availW = view.clientWidth;
+      const availH = view.clientHeight;
+      const needW = fit.offsetWidth;
+      const needH = fit.offsetHeight;
 
-      let scale = availH / needH;
-      scale = Math.max(0.3, Math.min(1, scale));
-      fit.style.zoom = scale;
+      // If content fits within both dimensions, no scaling needed
+      if (needW <= availW + 1 && needH <= availH + 1) return;
+
+      // Compute uniform scale to fit both dimensions
+      const sx = availW / needW;
+      const sy = availH / needH;
+      let scale = Math.min(sx, sy);
+      scale = Math.max(0.15, Math.min(1, scale));
+
+      // Apply scale from top-left and widen layout to compensate
+      fit.style.transform = `scale(${scale})`;
       fit.style.width = `${100 / scale}%`;
       void fit.offsetHeight;
 
-      // Second pass in case width change altered height
-      const needH2 = fit.scrollHeight;
-      if (needH2 > availH + 1) {
-        scale = Math.max(0.3, scale * (availH / needH2));
-        fit.style.zoom = scale;
-        fit.style.width = `${100 / scale}%`;
-      }
+      // Refinement: after width change, content may have reflowed (grid adds columns)
+      requestAnimationFrame(() => {
+        const newH = fit.offsetHeight;
+        if (newH * scale > availH + 1) {
+          const refined = Math.max(0.15, scale * availH / newH);
+          fit.style.transform = `scale(${refined})`;
+          fit.style.width = `${100 / refined}%`;
+        }
+      });
     }
 
     let _tvFitTimer = null;
     window.addEventListener('resize', () => {
       if (!tvMode) return;
       clearTimeout(_tvFitTimer);
-      _tvFitTimer = setTimeout(fitTV, 80);
+      _tvFitTimer = setTimeout(fitTV, 60);
     });
     window.addEventListener('orientationchange', () => {
       if (!tvMode) return;
-      setTimeout(fitTV, 250);
+      setTimeout(fitTV, 200);
     });
 
     function openHamburger() {
