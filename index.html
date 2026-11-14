@@ -1,3 +1,8 @@
+<!--
+  3 Erää - Turnausjärjestelmä
+  Versio: 1.2.0
+  Muutokset: Hampurilaisvalikko, tapahtuman poisto, oman historian korjaus
+-->
 <!DOCTYPE html>
 <html lang="fi">
 <head>
@@ -62,7 +67,7 @@
     html { font-size: calc(16px * var(--text-scale)); -webkit-text-size-adjust: 100%; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; margin: 0; }
     body.tv-mode { background: #000; color: #fff; }
-    body.tv-mode .topbar, body.tv-mode .screen, body.tv-mode .version-footer { display: none !important; }
+    body.tv-mode .topbar, body.tv-mode .screen { display: none !important; }
     body.tv-mode #view-tv { display: block !important; }
     h1, h2, h3 { color: var(--text); }
     h1 { font-size: 1.5rem; margin: 8px 0 4px; }
@@ -71,7 +76,7 @@
     .topbar { display: flex; align-items: center; gap: 4px; padding: 2px 8px; min-height: 52px; background: var(--surface); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 10; max-width: 640px; margin: 0 auto; padding-top: max(2px, env(safe-area-inset-top, 0px)); }
     .topbar-title { font-weight: 700; font-size: 1.05rem; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
     .topbar-actions { display: flex; gap: 2px; align-items: center; }
-    .icon-btn { background: transparent; border: none; border-radius: 10px; width: 44px; height: 44px; min-width: 44px; min-height: 44px; display: flex; align-items: center; justify-content: center; color: var(--text); cursor: pointer; font-size: 1.1rem; margin: 0; padding: 0; }
+    .icon-btn { background: transparent; border: none; border-radius: 10px; width: 44px; height: 44px; min-width: 44px; min-height: 44px; display: flex; align-items: center; justify-content: center; color: var(--text); cursor: pointer; font-size: 1.3rem; margin: 0; padding: 0; }
     .icon-btn:hover, .icon-btn:active { background: var(--surface-2); }
     .screen { max-width: 640px; margin: 0 auto; padding: 12px; padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px)); }
     .card { background: var(--surface); border-radius: 12px; padding: 16px; box-shadow: var(--shadow); width: 100%; margin-bottom: 12px; color: var(--text); }
@@ -149,7 +154,6 @@
     .role-badge.player { background: var(--win-bg); color: var(--win-fg); }
     .empty-state { text-align: center; padding: 24px 12px; color: var(--text-muted); }
     .empty-state .icon { font-size: 2.5rem; margin-bottom: 8px; opacity: 0.6; }
-    .version-footer { text-align: center; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border); }
     .version-link { display: inline-block; color: var(--primary); font-size: 0.85rem; text-decoration: underline; cursor: pointer; padding: 8px 12px; }
     .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 100; display: flex; align-items: flex-end; justify-content: center; }
     .modal { background: var(--surface); color: var(--text); border-radius: 20px 20px 0 0; padding: 12px 20px max(20px, calc(20px + env(safe-area-inset-bottom, 0px))); width: 100%; max-width: 600px; max-height: 90vh; max-height: 90dvh; overflow-y: auto; box-shadow: var(--shadow-lg); }
@@ -175,9 +179,6 @@
     @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .loading-overlay { background: rgba(15,17,23,0.95); } }
     .spinner { width: 40px; height: 40px; border: 4px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 12px; }
     @keyframes spin { to { transform: rotate(360deg); } }
-    .court-selector-row { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; padding: 10px 12px; background: var(--surface); border-radius: 10px; box-shadow: var(--shadow); }
-    .court-selector-row label { margin: 0; flex: 0 0 auto; font-size: 0.9rem; }
-    .court-selector-row select { flex: 1; padding: 8px 10px; min-height: 40px; }
     #view-tv { display: none; min-height: 100vh; background: #0a0a0f; color: #fff; padding: 24px; font-size: 1.1rem; }
     .tv-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 2px solid #2a2a3a; }
     .tv-title { font-size: 2rem; font-weight: 800; }
@@ -199,6 +200,8 @@
     .tv-table td { padding: 10px 6px; border-bottom: 1px solid #2a2f3c; }
     .tv-table tr.top { background: #1e2440; font-weight: 700; }
     .tv-num { text-align: right; font-variant-numeric: tabular-nums; }
+    .hamburger-section-label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); font-weight: 700; margin: 16px 0 6px; }
+    .hamburger-section-label:first-child { margin-top: 0; }
   </style>
 </head>
 <body>
@@ -207,7 +210,7 @@
     <button class="icon-btn hidden" id="btnBackTop" aria-label="Takaisin" type="button">←</button>
     <div class="topbar-title" id="topbarTitle">🎾 3 Erää</div>
     <div class="topbar-actions">
-      <button class="icon-btn" id="btnSettings" aria-label="Asetukset" type="button">⚙️</button>
+      <button class="icon-btn" id="btnHamburger" aria-label="Valikko" type="button">☰</button>
     </div>
   </div>
 
@@ -277,10 +280,6 @@
         <button id="btnBackToEvent" class="secondary" type="button">Takaisin muuttamatta</button>
       </div>
     </div>
-
-    <div class="version-footer">
-      <a class="version-link" data-version-link href="#" onclick="return false;">Versio 1.1.0</a>
-    </div>
   </div>
 
   <div id="view-tv">
@@ -290,6 +289,18 @@
     </div>
     <div class="tv-courts" id="tvCourts"></div>
     <div class="tv-standings" id="tvStandings"></div>
+  </div>
+
+  <!-- HAMPURILAISVALIKKO -->
+  <div id="hamburgerModal" class="modal-overlay hidden" role="dialog" aria-modal="true">
+    <div class="modal">
+      <div class="modal-drag-handle"></div>
+      <h2>Valikko</h2>
+      <div id="hamburgerContent"></div>
+      <div class="modal-actions">
+        <button id="hamburgerCloseBtn" class="secondary" type="button">Sulje</button>
+      </div>
+    </div>
   </div>
 
   <div id="joinModal" class="modal-overlay hidden" role="dialog" aria-modal="true">
@@ -416,7 +427,7 @@
     const db = getDatabase(app);
     const auth = getAuth(app);
     const $ = id => document.getElementById(id);
-    const APP_VERSION = '1.1.0';
+    const APP_VERSION = '1.2.0';
     const MAX_POINT_DIFF = 5;
     const ID_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
@@ -431,6 +442,7 @@
     let tvMode = false;
     let currentView = 'view-home';
     let playerViewCourtOverride = null;
+    let lastCycleCount = 0;
     const editingRounds = new Set();
     const editingHistory = new Set();
 
@@ -570,73 +582,48 @@
     function count5pCourts(courts) { return courts.filter(c => c.players.length === 5).length; }
     function findRestCourtIndex(courts) { return courts.findIndex(c => c.players.length === 5); }
 
-    // ============================================================
-    // PROMOTION / RELEGATION LOGIC (BUG-1/2/3 fixed)
-    // No global sorting. Only adjacent court exchanges.
-    // - 4p vs 4p: 1 up / 1 down
-    // - 5p vs 5p: 2 up / 2 down
-    // - Mixed (4p vs 5p): 1 up / 1 down (sizes preserved)
-    // ============================================================
     function computeBoundaryExchange(oldCourts, standings) {
       const N = oldCourts.length;
       const rank = {};
       standings.forEach((s, i) => { rank[s.name] = i; });
-
       const sends = oldCourts.map(() => []);
       const receives = oldCourts.map(() => []);
-
       for (let i = 0; i < N - 1; i++) {
         const upper = oldCourts[i];
         const lower = oldCourts[i + 1];
         const both5p = upper.players.length === 5 && lower.players.length === 5;
         const count = both5p ? 2 : 1;
-
         const upperSorted = [...upper.players].sort((a, b) => (rank[a] ?? 999) - (rank[b] ?? 999));
         const lowerSorted = [...lower.players].sort((a, b) => (rank[a] ?? 999) - (rank[b] ?? 999));
-
         const drops = upperSorted.slice(-count);
         const rises = lowerSorted.slice(0, count);
-
-        sends[i].push(...drops);
-        receives[i + 1].push(...drops);
-        sends[i + 1].push(...rises);
-        receives[i].push(...rises);
+        sends[i].push(...drops); receives[i + 1].push(...drops);
+        sends[i + 1].push(...rises); receives[i].push(...rises);
       }
-
       const newLists = oldCourts.map((c, i) => {
         const remaining = c.players.filter(p => !sends[i].includes(p));
         return [...remaining, ...receives[i]];
       });
-
       return newLists.map((ps, i) => {
         const rot = oldCourts[i].restRotation || 0;
         return { courtIndex: i, courtNumber: i + 1, players: ps, restRotation: rot + 1, rounds: generateCourtRounds(ps, rot) };
       });
     }
 
-    // BUG-10 fixed: rest-turn cycles through all positions equally using wrap-around.
-    // Trade-off: at wrap, 2 players jump 2 courts (predictable, once per N cycles).
     function computeRestTurn(oldCourts, standings, oldRestDirection) {
       const N = oldCourts.length;
       const currentRest = findRestCourtIndex(oldCourts);
       const direction = oldRestDirection || "up";
       let nextRest;
-
-      if (direction === "up") {
-        nextRest = (currentRest - 1 + N) % N;
-      } else {
-        nextRest = (currentRest + 1) % N;
-      }
-
+      if (direction === "up") nextRest = (currentRest - 1 + N) % N;
+      else nextRest = (currentRest + 1) % N;
       const isMoveUp = nextRest < currentRest;
       const rank = {};
       standings.forEach((s, i) => { rank[s.name] = i; });
       const lists = oldCourts.map(c => [...c.players]);
-
       const src = currentRest, tgt = nextRest;
       const sR = [...lists[src]].sort((a, b) => (rank[a] ?? 999) - (rank[b] ?? 999));
       const tR = [...lists[tgt]].sort((a, b) => (rank[a] ?? 999) - (rank[b] ?? 999));
-
       if (isMoveUp) {
         const rising2 = sR.slice(0, 2);
         const dropping1 = tR[tR.length - 1];
@@ -652,7 +639,6 @@
         lists[tgt].push(...dropping2);
         lists[src].push(rising1);
       }
-
       const newCourts = lists.map((ps, i) => {
         const rot = oldCourts[i].restRotation || 0;
         return { courtIndex: i, courtNumber: i + 1, players: ps, restRotation: rot + 1, rounds: generateCourtRounds(ps, rot) };
@@ -671,13 +657,8 @@
         };
       }
       const num5p = count5pCourts(oldCourts);
-      if (num5p === 1) {
-        return computeRestTurn(oldCourts, standings, oldRestDirection);
-      }
-      return {
-        courts: computeBoundaryExchange(oldCourts, standings),
-        restDirection: oldRestDirection || "up"
-      };
+      if (num5p === 1) return computeRestTurn(oldCourts, standings, oldRestDirection);
+      return { courts: computeBoundaryExchange(oldCourts, standings), restDirection: oldRestDirection || "up" };
     }
 
     function calculateRoundBinaryWeights(courts, results, rIdx) {
@@ -773,11 +754,6 @@
       return { totalEntered, total, currentRound, completed, hasAny: totalEntered > 0 };
     }
 
-    function hasAnyResults(eventData) {
-      if (!eventData?.rounds) return false;
-      return eventData.rounds.some(rd => rd?.results && Object.keys(rd.results).length > 0);
-    }
-
     async function createEvent(name, playerNames, selfName) {
       let playerCode;
       for (let i = 0; i < 10; i++) {
@@ -816,6 +792,31 @@
       unsubscribeEvent = onValue(ref(db, 'events/' + eventId), (snapshot) => {
         callback(snapshot.exists() ? snapshot.val() : null);
       });
+    }
+
+    async function deleteEvent() {
+      if (!currentEventId || !currentEventData) return;
+      const name = currentEventData.name || currentEventId;
+      if (!confirm(`🗑️ Poistetaanko tapahtuma "${name}" pysyvästi?\n\nTämä poistaa tapahtuman tietokannasta ja kaikilta laitteilta. Toimintoa EI voi perua.`)) return;
+      showLoading('Poistetaan tapahtumaa...');
+      try {
+        const playerCode = currentEventData.playerCode || currentEventId;
+        const organizerCode = currentEventData.organizerCode;
+        if (playerCode) await remove(ref(db, 'events/' + playerCode));
+        if (organizerCode) await remove(ref(db, 'organizerCodes/' + organizerCode));
+        removeRecentEvent(playerCode);
+        if (unsubscribeEvent) { unsubscribeEvent(); unsubscribeEvent = null; }
+        currentEventId = null; currentEventData = null; currentRole = null; currentPlayerName = null;
+        playerViewCourtOverride = null; editingRounds.clear(); editingHistory.clear();
+        lastCycleCount = 0;
+        history.replaceState({}, '', window.location.pathname);
+        hideLoading();
+        showView('view-home'); renderRecentEvents();
+        showToast('Tapahtuma poistettu');
+      } catch(e) {
+        hideLoading();
+        alert('Virhe poistossa: ' + e.message);
+      }
     }
 
     async function resolveEventCode(code) {
@@ -873,13 +874,15 @@
         const data = await loadEvent(eventId);
         if (!data) { hideLoading(); alert('Tapahtumaa ei löytynyt.'); return; }
         currentEventData = data;
+        lastCycleCount = (data.previousCycles || []).length;
+        playerViewCourtOverride = null;
         upsertRecentEvent({ id: eventId, name: data.name || eventId, role: currentRole, myPlayerName: currentPlayerName, playerCount: (data.playerNames || []).length });
         hideLoading();
         showView('view-event');
         setupEventTabs();
         switchTab('players');
         listenEvent(eventId, (d) => {
-          if (!d) { alert('Tapahtuma poistettu.'); window.location.href = window.location.pathname; return; }
+          if (!d) { alert('Tapahtuma on poistettu.'); window.location.href = window.location.pathname; return; }
           currentEventData = d;
           renderEventView();
         });
@@ -917,6 +920,11 @@
     function renderEventView() {
       if (!currentEventData) return;
       const d = currentEventData;
+      const cycleCount = (d.previousCycles || []).length;
+      if (cycleCount !== lastCycleCount) {
+        lastCycleCount = cycleCount;
+        playerViewCourtOverride = null;
+      }
       $('eventNameDisplay').textContent = d.name || d.playerCode || 'Tapahtuma';
       const st = computeRoundStatus(d);
       const roleLabel = currentRole === 'organizer' ? 'Järjestäjä' : 'Pelaaja';
@@ -931,7 +939,7 @@
     }
 
     // ============================================================
-    // PLAYERS TAB
+    // PLAYERS TAB (court selector removed - now in hamburger)
     // ============================================================
     function renderTabPlayers() {
       const container = $('tabContentPlayers');
@@ -956,51 +964,22 @@
         return;
       }
 
-      // Court selector for player (BUG-6 fix)
       if (currentRole === 'player') {
         let selectedIdx = myCourtIdx >= 0 ? myCourtIdx : (d.courts[0]?.courtIndex ?? 0);
         if (playerViewCourtOverride !== null && (d.courts || []).some(c => c.courtIndex === playerViewCourtOverride)) {
           selectedIdx = playerViewCourtOverride;
         }
 
-        const selectorDiv = document.createElement('div');
-        selectorDiv.className = 'court-selector-row';
-        let selHtml = '<label>Kenttä</label><select id="courtSelectorPlayer">';
-        (d.courts || []).forEach(c => {
-          const isMine = c.courtIndex === myCourtIdx;
-          selHtml += `<option value="${c.courtIndex}" ${c.courtIndex === selectedIdx ? 'selected' : ''}>K${c.courtNumber}${isMine ? ' (oma)' : ''}</option>`;
-        });
-        selHtml += '</select>';
-        selectorDiv.innerHTML = selHtml;
-        container.appendChild(selectorDiv);
-
-        $('courtSelectorPlayer').onchange = (e) => {
-          playerViewCourtOverride = parseInt(e.target.value);
-          renderTabPlayers();
-        };
-
         const selectedCourt = d.courts.find(c => c.courtIndex === selectedIdx);
         if (selectedCourt) {
           const isMine = selectedIdx === myCourtIdx;
-          if (!isMine) {
+          if (!isMine && myCourtIdx >= 0) {
             const notice = document.createElement('div');
             notice.className = 'info-box';
-            notice.innerHTML = `Syötät tuloksia kentälle <strong>K${selectedCourt.courtNumber}</strong>. Oma kenttäsi on <strong>K${d.courts.find(c => c.courtIndex === myCourtIdx)?.courtNumber || '–'}</strong>.`;
+            notice.innerHTML = `Syötät tuloksia kentälle <strong>K${selectedCourt.courtNumber}</strong>. Oma kenttäsi on <strong>K${d.courts.find(c => c.courtIndex === myCourtIdx)?.courtNumber || '–'}</strong>. Vaihda kenttää valikosta ☰.`;
             container.appendChild(notice);
           }
           container.appendChild(buildCourtCard(selectedCourt, isMine, selectedIdx === restIdx));
-        }
-
-        // Player history button
-        if (currentPlayerName) {
-          const actions = document.createElement('div');
-          actions.className = 'card';
-          actions.innerHTML = `<button id="btnOwnHistory" class="secondary" type="button">📊 Oma historia</button>`;
-          container.appendChild(actions);
-          $('btnOwnHistory').onclick = () => {
-            showView('view-player-history');
-            renderPlayerHistoryStandalone();
-          };
         }
         return;
       }
@@ -1015,7 +994,6 @@
           return a.courtNumber - b.courtNumber;
         });
       }
-
       sorted.forEach(court => {
         container.appendChild(buildCourtCard(court, court.courtIndex === myCourtIdx, court.courtIndex === restIdx));
       });
@@ -1039,18 +1017,14 @@
           ${isRest ? '<span class="tag rest">TAUKO</span>' : ''}
         </span>
       </div>`;
-
       let targetRound = -1;
       for (let r = 0; r < 3; r++) if (!getCourtResult(d, r, court.courtIndex)) { targetRound = r; break; }
-
       for (let r = 0; r < 3; r++) {
         const pair = getRoundPairing(court, r);
         const res = getCourtResult(d, r, court.courtIndex);
         const key = `${court.courtIndex}-${r}`;
         const isEditing = editingRounds.has(key);
-
         if (!pair) { html += `<div class="round-row waiting">Erä ${r+1}: tiedot puuttuvat</div>`; continue; }
-
         if (res && !isEditing) {
           const canEdit = currentRole === 'organizer' || (currentPlayerName && (pair.team1.includes(currentPlayerName) || pair.team2.includes(currentPlayerName)));
           html += `<div class="round-row done">
@@ -1081,10 +1055,7 @@
           html += `<div class="round-row waiting"><strong>Erä ${r+1}:</strong> ${pair.team1.join(' & ')} vs ${pair.team2.join(' & ')} <span class="muted">(odottaa)</span></div>`;
         }
       }
-
       card.innerHTML = html;
-
-      // Edit buttons
       card.querySelectorAll('[data-edit-court]').forEach(el => {
         el.onclick = () => {
           const c = el.getAttribute('data-edit-court');
@@ -1093,8 +1064,6 @@
           renderTabPlayers();
         };
       });
-
-      // Cancel buttons
       card.querySelectorAll('.score-cancel').forEach(el => {
         el.onclick = () => {
           const c = el.getAttribute('data-court');
@@ -1103,8 +1072,6 @@
           renderTabPlayers();
         };
       });
-
-      // Submit buttons
       const submitBtn = card.querySelector('.score-submit');
       if (submitBtn) {
         submitBtn.onclick = async () => {
@@ -1120,7 +1087,6 @@
           try {
             await saveRoundResult(cIdx, r, s1, s2);
             editingRounds.delete(`${cIdx}-${r}`);
-            // Listener updates UI
           } catch(e) {
             alert('Virhe: ' + e.message);
             submitBtn.disabled = false;
@@ -1128,12 +1094,11 @@
           }
         };
       }
-
       return card;
     }
 
     // ============================================================
-    // ADMIN TAB
+    // ADMIN TAB (delete event replaces leave event)
     // ============================================================
     function renderTabAdmin() {
       if (currentRole !== 'organizer') return;
@@ -1142,7 +1107,6 @@
       if (!currentEventData) return;
       const d = currentEventData;
       const st = computeRoundStatus(d);
-
       let html = '<div class="card">';
       html += `<div class="code-block">
         <div class="label">📱 Pelaajakoodi (jaa kaikille)</div>
@@ -1157,7 +1121,6 @@
         <div class="code-display" style="color:var(--warn-fg);">${d.organizerCode}</div>
         <button id="btnCopyOrganizerCode" class="secondary small" type="button">Kopioi järjestäjäkoodi</button>
       </div>`;
-
       if (st.completed) {
         html += `<div class="success-box" style="margin-bottom:8px;">✅ Kaikki tulokset syötetty!</div>
           <button id="btnCalculateRound" type="button">Laske kierros ja näytä sijoitukset</button>`;
@@ -1166,17 +1129,15 @@
       } else {
         html += `<div class="info-box">Odotetaan tuloksia. Jaa pelaajakoodi pelaajille.</div>`;
       }
-
       html += `<div class="divider"></div>
         <button id="btnManagePlayers" class="secondary" type="button">👥 Hallinnoi pelaajia</button>
         <button id="btnOpenTV" class="secondary" type="button">📺 Avaa TV-näkymä</button>
         <p class="muted" style="margin-top:6px;">TV-näkymä avautuu uuteen ikkunaan. Voit heijastaa sen isolle näytölle tai projektorille.</p>
         <div class="divider"></div>
-        <button id="btnLeaveEvent" class="danger" type="button">Poistu tapahtumasta</button>
-        <p class="muted" style="margin-top:6px;">Tämä poistaa tapahtuman vain tältä laitteelta. Tietoja ei poisteta palvelimelta.</p>
+        <button id="btnDeleteEvent" class="danger" type="button">🗑️ Poista tapahtuma</button>
+        <p class="muted" style="margin-top:6px;">Poistaa tapahtuman pysyvästi tietokannasta ja kaikilta laitteilta. Toimintoa ei voi perua.</p>
       </div>`;
       container.innerHTML = html;
-
       $('btnShowShare').onclick = () => openShareModal();
       $('btnCopyPlayerCodeAdmin').onclick = () => copyText(d.playerCode, 'Pelaajakoodi kopioitu');
       $('btnCopyOrganizerCode').onclick = () => copyText(d.organizerCode, 'Järjestäjäkoodi kopioitu');
@@ -1186,19 +1147,9 @@
         const url = window.location.origin + window.location.pathname + '?event=' + encodeURIComponent(currentEventId) + '&tv=1';
         window.open(url, '_blank', 'noopener');
       };
-      $('btnLeaveEvent').onclick = () => {
-        if (!confirm('Poistutaanko tapahtumasta? Voit liittyä uudelleen koodilla.')) return;
-        removeRecentEvent(currentEventId);
-        if (unsubscribeEvent) { unsubscribeEvent(); unsubscribeEvent = null; }
-        currentEventId = null; currentEventData = null; currentRole = null; currentPlayerName = null;
-        history.replaceState({}, '', window.location.pathname);
-        showView('view-home'); renderRecentEvents();
-      };
+      $('btnDeleteEvent').onclick = () => deleteEvent();
     }
 
-    // ============================================================
-    // HISTORY TAB (with organizer edit for past cycles)
-    // ============================================================
     function renderTabHistory() {
       const container = $('tabContentHistory');
       container.innerHTML = '';
@@ -1213,22 +1164,18 @@
         return;
       }
       const getNextCourts = (idx) => idx + 1 < cycles.length ? cycles[idx + 1].courts || [] : currentEventData.courts || [];
-
       const intro = document.createElement('div');
       intro.className = 'card';
       intro.innerHTML = `<h2>${cycles.length} päättynyttä kierrosta</h2><p class="sub">Voit muokata tuloksia. Muutokset päivittävät sijoitukset automaattisesti.</p>`;
       container.appendChild(intro);
-
       cycles.forEach((cycle, idx) => {
         const nextCourts = getNextCourts(idx);
         const nextCourtOf = {};
         nextCourts.forEach(c => (c.players || []).forEach(p => { nextCourtOf[p] = c.courtNumber; }));
-
         const section = document.createElement('div');
         section.className = 'card';
         let html = `<h2>Kierros ${idx + 1}</h2>`;
         if (cycle.completedAt) html += `<p class="muted">${formatTimestamp(cycle.completedAt)}</p>`;
-
         (cycle.courts || []).forEach(court => {
           html += `<div style="margin:10px 0; background:var(--surface-2); padding:10px; border-radius:8px;">
             <div style="font-weight:700; margin-bottom:6px;">Kenttä ${court.courtNumber}</div>`;
@@ -1285,20 +1232,16 @@
         section.innerHTML = html;
         container.appendChild(section);
       });
-
-      // Wire edit buttons
       container.querySelectorAll('[data-hist-edit-cycle]').forEach(el => {
         el.onclick = () => {
           const k = `${el.getAttribute('data-hist-edit-cycle')}-${el.getAttribute('data-hist-edit-court')}-${el.getAttribute('data-hist-edit-round')}`;
-          editingHistory.add(k);
-          renderTabHistory();
+          editingHistory.add(k); renderTabHistory();
         };
       });
       container.querySelectorAll('[data-hist-cancel-cycle]').forEach(el => {
         el.onclick = () => {
           const k = `${el.getAttribute('data-hist-cancel-cycle')}-${el.getAttribute('data-hist-cancel-court')}-${el.getAttribute('data-hist-cancel-round')}`;
-          editingHistory.delete(k);
-          renderTabHistory();
+          editingHistory.delete(k); renderTabHistory();
         };
       });
       container.querySelectorAll('[data-hist-save-cycle]').forEach(el => {
@@ -1311,18 +1254,14 @@
           const s2 = parseInt(inputs[1].value);
           if (isNaN(s1) || isNaN(s2) || s1 < 0 || s2 < 0 || s1 > 99 || s2 > 99) { alert('Syötä molemmat pisteet (0–99).'); return; }
           if (s1 === s2) { alert('Erässä ei voi olla tasapeliä.'); return; }
-          el.disabled = true;
-          el.textContent = '...';
+          el.disabled = true; el.textContent = '...';
           try {
-            // Update result
             await set(ref(db, `events/${currentEventId}/previousCycles/${cycIdx}/rounds/${rIdx}/results/${courtIdx}`), { team1Score: s1, team2Score: s2, timestamp: new Date().toISOString() });
-            // Recompute standings for that cycle
             const freshData = await loadEvent(currentEventId);
             const pc = freshData.previousCycles[cycIdx];
             const newStandings = computeStandings({ courts: pc.courts, rounds: pc.rounds, playerNames: freshData.playerNames });
             await set(ref(db, `events/${currentEventId}/previousCycles/${cycIdx}/standings`), newStandings);
             editingHistory.delete(`${cycIdx}-${courtIdx}-${rIdx}`);
-            // Listener updates UI
           } catch(e) {
             alert('Virhe: ' + e.message);
             el.disabled = false; el.textContent = 'Tallenna';
@@ -1389,15 +1328,8 @@
       container.innerHTML = html;
     }
 
-    function renderPlayerHistoryStandalone() {
-      const container = $('view-player-history');
-      container.innerHTML = '<div class="card"><h2>Oma historia</h2><div id="playerHistoryContainer"></div><button id="btnBackFromPlayerHistory" class="secondary" type="button" style="margin-top:16px;">← Takaisin</button></div>';
-      renderPlayerOwnHistory($('playerHistoryContainer'));
-      $('btnBackFromPlayerHistory').onclick = () => { showView('view-event'); switchTab('players'); };
-    }
-
     // ============================================================
-    // MANAGE PLAYERS (BUG-9 fixed: preserve results)
+    // MANAGE PLAYERS
     // ============================================================
     function openManagePlayers() {
       if (currentRole !== 'organizer' || !currentEventData) return;
@@ -1450,19 +1382,15 @@
       const n = managingPlayersList.length;
       const valid = (n === 4 || n === 5 || n === 8 || n === 9 || n === 10 || n >= 12);
       if (!valid) { errEl.textContent = `Pelaajamäärä ${n} ei ole tuettu. Käytä 4, 5, 8, 9, 10 tai vähintään 12 pelaajaa.`; errEl.classList.remove('hidden'); return; }
-
       const hasCurrentCycleResults = (currentEventData.rounds || []).some(rd => rd?.results && Object.keys(rd.results).length > 0);
       if (hasCurrentCycleResults) {
         if (!confirm('Nykyisellä kierroksella on jo tuloksia. Muuttuneiden kenttien erät nollataan, mutta aiempien kierrosten historia säilyy.\n\nJatketaanko?')) return;
       }
-
       showLoading('Tallennetaan...');
       try {
         const newCourts = assignCourts(managingPlayersList, currentEventData.courts);
         let newRestDir = "up";
         if (count5pCourts(newCourts) === 1 && findRestCourtIndex(newCourts) === 0) newRestDir = "down";
-
-        // BUG-9 fix: preserve current cycle results for unchanged courts
         const oldRounds = currentEventData.rounds || [];
         const newRounds = [
           { roundIndex: 0, results: {} },
@@ -1472,8 +1400,7 @@
         newCourts.forEach((newCourt, i) => {
           const oldCourt = (currentEventData.courts || [])[i];
           if (!oldCourt) return;
-          const samePlayers = newCourt.players.length === oldCourt.players.length &&
-                              newCourt.players.every(p => oldCourt.players.includes(p));
+          const samePlayers = newCourt.players.length === oldCourt.players.length && newCourt.players.every(p => oldCourt.players.includes(p));
           if (samePlayers) {
             for (let r = 0; r < 3; r++) {
               const oldRes = oldRounds[r]?.results?.[oldCourt.courtIndex];
@@ -1481,24 +1408,16 @@
             }
           }
         });
-
-        // Preserve previousCycles entirely (BUG-9 fix)
         await update(ref(db, 'events/' + currentEventId), {
-          playerNames: managingPlayersList,
-          courts: newCourts,
-          rounds: newRounds,
-          restDirection: newRestDir
+          playerNames: managingPlayersList, courts: newCourts, rounds: newRounds, restDirection: newRestDir
         });
-
         if (currentPlayerName && !managingPlayersList.includes(currentPlayerName)) {
           currentPlayerName = null;
           const entry = getEventEntry(currentEventId);
           if (entry) upsertRecentEvent({ ...entry, myPlayerName: null });
         }
-
         hideLoading();
-        showView('view-event');
-        switchTab('players');
+        showView('view-event'); switchTab('players');
       } catch(e) {
         hideLoading();
         errEl.textContent = 'Virhe: ' + e.message;
@@ -1514,13 +1433,11 @@
       showView('view-standings');
       const standings = computeStandings(currentEventData);
       const container = $('standingsContainer');
-      let html = `<table class="standings-table">
-        <tr><th>#</th><th>Pelaaja</th><th>Voitot</th><th>Piste-ero ka.</th><th>B</th></tr>`;
+      let html = `<table class="standings-table"><tr><th>#</th><th>Pelaaja</th><th>Voitot</th><th>Piste-ero ka.</th><th>B</th></tr>`;
       standings.forEach((s, i) => {
         html += `<tr><td>${i+1}</td><td><strong>${s.name}</strong></td><td>${s.wins}/${s.played}</td><td>${s.avgPointDiff >= 0 ? '+' : ''}${s.avgPointDiff.toFixed(2)}</td><td>${s.bAvg.toFixed(2)}</td></tr>`;
       });
       html += '</table>';
-
       try {
         const { courts: preview } = computeNextCourts(currentEventData.courts, standings, currentEventData.restDirection || "up");
         html += `<h2 style="margin-top:16px;">Seuraavat kentät</h2><table class="standings-table"><tr><th>Kenttä</th><th>Pelaajat</th></tr>`;
@@ -1547,27 +1464,14 @@
         const { courts: newCourts, restDirection: newRestDir } = computeNextCourts(fresh.courts, standings, fresh.restDirection || "up");
         const prevCycle = { courts: fresh.courts, rounds: fresh.rounds, standings, completedAt: new Date().toISOString() };
         const cycles = [...(fresh.previousCycles || []), prevCycle].slice(-50);
-        const newRounds = [
-          { roundIndex: 0, results: {} },
-          { roundIndex: 1, results: {} },
-          { roundIndex: 2, results: {} }
-        ];
+        const newRounds = [{ roundIndex: 0, results: {} }, { roundIndex: 1, results: {} }, { roundIndex: 2, results: {} }];
         await update(ref(db, 'events/' + currentEventId), {
-          previousCycle: prevCycle,
-          previousCycles: cycles,
-          courts: newCourts,
-          rounds: newRounds,
-          restDirection: newRestDir
+          previousCycle: prevCycle, previousCycles: cycles, courts: newCourts, rounds: newRounds, restDirection: newRestDir
         });
-        editingRounds.clear();
-        playerViewCourtOverride = null;
+        editingRounds.clear(); playerViewCourtOverride = null;
         hideLoading();
-        showView('view-event');
-        switchTab('history');
-      } catch(e) {
-        hideLoading();
-        alert('Virhe: ' + e.message);
-      }
+        showView('view-event'); switchTab('history');
+      } catch(e) { hideLoading(); alert('Virhe: ' + e.message); }
     }
 
     // ============================================================
@@ -1586,9 +1490,7 @@
     function renderTVView(d) {
       $('tvTitle').textContent = d.name || d.playerCode || 'Tapahtuma';
       const st = computeRoundStatus(d);
-      $('tvStatus').innerHTML = st.completed
-        ? `✅ Kierros valmis · ${st.totalEntered}/${st.total}`
-        : `Kierros <strong>${st.currentRound}/3</strong> · ${st.totalEntered}/${st.total} tulosta`;
+      $('tvStatus').innerHTML = st.completed ? `✅ Kierros valmis · ${st.totalEntered}/${st.total}` : `Kierros <strong>${st.currentRound}/3</strong> · ${st.totalEntered}/${st.total} tulosta`;
       const courtsContainer = $('tvCourts');
       courtsContainer.innerHTML = '';
       const num5p = count5pCourts(d.courts || []);
@@ -1620,6 +1522,79 @@
     }
 
     // ============================================================
+    // HAMBURGER MENU
+    // ============================================================
+    function openHamburger() {
+      const content = $('hamburgerContent');
+      let html = '';
+
+      // Contextual player items
+      if (currentEventId && currentEventData && currentRole === 'player' && currentPlayerName) {
+        const d = currentEventData;
+        const myCourtIdx = (d.courts || []).find(c => c.players.includes(currentPlayerName))?.courtIndex ?? -1;
+        let selectedIdx = myCourtIdx >= 0 ? myCourtIdx : (d.courts[0]?.courtIndex ?? 0);
+        if (playerViewCourtOverride !== null && (d.courts || []).some(c => c.courtIndex === playerViewCourtOverride)) {
+          selectedIdx = playerViewCourtOverride;
+        }
+
+        html += `<div class="hamburger-section-label">Pelikenttä</div>`;
+        html += `<select id="hamburgerCourtSelector">`;
+        (d.courts || []).forEach(c => {
+          const isMine = c.courtIndex === myCourtIdx;
+          html += `<option value="${c.courtIndex}" ${c.courtIndex === selectedIdx ? 'selected' : ''}>K${c.courtNumber}${isMine ? ' (oma)' : ''}</option>`;
+        });
+        html += `</select>`;
+
+        html += `<button id="hamburgerHistoryBtn" class="secondary" type="button" style="margin-top:10px;">📊 Oma historia</button>`;
+      }
+
+      // Global items
+      html += `<div class="hamburger-section-label" style="margin-top:${html ? '20px' : '0'};">Asetukset</div>`;
+      html += `<button id="hamburgerSettingsBtn" class="secondary" type="button">⚙️ Teema ja tekstikoko</button>`;
+
+      html += `<div style="text-align:center;margin-top:24px;padding-top:16px;border-top:1px solid var(--border);">
+        <a class="version-link" id="hamburgerVersionLink" href="#" onclick="return false;">Versio ${APP_VERSION}</a>
+      </div>`;
+
+      content.innerHTML = html;
+
+      // Wire
+      const courtSel = $('hamburgerCourtSelector');
+      if (courtSel) {
+        courtSel.onchange = (e) => {
+          playerViewCourtOverride = parseInt(e.target.value);
+          closeModal('hamburgerModal');
+          switchTab('players');
+        };
+      }
+      const histBtn = $('hamburgerHistoryBtn');
+      if (histBtn) {
+        histBtn.onclick = () => {
+          closeModal('hamburgerModal');
+          switchTab('history');
+        };
+      }
+      $('hamburgerSettingsBtn').onclick = () => {
+        closeModal('hamburgerModal');
+        openSettings();
+      };
+      $('hamburgerVersionLink').onclick = (e) => {
+        e.preventDefault();
+        closeModal('hamburgerModal');
+        updateApp();
+      };
+
+      openModal('hamburgerModal');
+    }
+
+    function openSettings() {
+      const theme = getThemeSetting();
+      document.querySelectorAll('input[name="uiTheme"]').forEach(r => { r.checked = (r.value === theme); });
+      updateUiScaleDisplay();
+      openModal('settingsModal');
+    }
+
+    // ============================================================
     // CREATE / JOIN
     // ============================================================
     function populateSelfSelect() {
@@ -1645,9 +1620,7 @@
       showLoading('Luodaan tapahtumaa...');
       try {
         const { playerCode, organizerCode } = await createEvent(name, names, selfName);
-        currentEventId = playerCode;
-        currentRole = 'organizer';
-        currentPlayerName = selfName;
+        currentEventId = playerCode; currentRole = 'organizer'; currentPlayerName = selfName;
         upsertRecentEvent({ id: playerCode, name, role: 'organizer', myPlayerName: selfName, playerCount: names.length });
         history.replaceState({}, '', window.location.pathname + '?event=' + playerCode);
         hideLoading();
@@ -1672,10 +1645,7 @@
       try {
         const resolved = await resolveEventCode(code);
         if (!resolved) { hideLoading(); err.textContent = 'Koodia ei löytynyt. Tarkista koodi.'; err.classList.remove('hidden'); return; }
-        currentEventId = resolved.eventId;
-        currentRole = resolved.role;
-        currentPlayerName = null;
-        currentEventData = resolved.eventData;
+        currentEventId = resolved.eventId; currentRole = resolved.role; currentPlayerName = null; currentEventData = resolved.eventData;
         closeModal('joinModal'); hideLoading();
         history.replaceState({}, '', window.location.pathname + '?event=' + currentEventId);
         askIdentify();
@@ -1701,9 +1671,6 @@
       } catch(e) { hideLoading(); err.textContent = 'Virhe: ' + e.message; err.classList.remove('hidden'); }
     }
 
-    // ============================================================
-    // SHARE
-    // ============================================================
     function buildShareUrl() { return `${location.origin}${location.pathname}?event=${encodeURIComponent(currentEventData?.playerCode || currentEventId || '')}`; }
     function openShareModal() {
       if (!currentEventData) return;
@@ -1724,12 +1691,9 @@
     // ============================================================
     // WIRING
     // ============================================================
-    $('btnSettings').onclick = () => {
-      const theme = getThemeSetting();
-      document.querySelectorAll('input[name="uiTheme"]').forEach(r => { r.checked = (r.value === theme); });
-      updateUiScaleDisplay();
-      openModal('settingsModal');
-    };
+    $('btnHamburger').onclick = () => openHamburger();
+    $('hamburgerCloseBtn').onclick = () => closeModal('hamburgerModal');
+
     $('settingsCloseBtn').onclick = () => closeModal('settingsModal');
     document.querySelectorAll('input[name="uiTheme"]').forEach(r => r.addEventListener('change', () => { if (r.checked) applyTheme(r.value); }));
     $('textSizeMinus').onclick = () => applyUiScale(uiScalePercent - 5);
@@ -1781,6 +1745,7 @@
       closeModal('identifyModal');
       showView('view-event');
       setupEventTabs(); switchTab('players');
+      lastCycleCount = (currentEventData?.previousCycles || []).length;
       listenEvent(currentEventId, (d) => {
         if (!d) { alert('Tapahtuma poistettu.'); window.location.href = window.location.pathname; return; }
         currentEventData = d; renderEventView();
@@ -1803,11 +1768,6 @@
 
     $('btnApplyPromotions').onclick = () => applyPromotions();
     $('btnBackToEvent').onclick = () => { showView('view-event'); switchTab('players'); };
-
-    document.querySelectorAll('[data-version-link]').forEach(el => {
-      el.textContent = 'Versio ' + APP_VERSION;
-      el.onclick = (e) => { e.preventDefault(); updateApp(); };
-    });
 
     async function updateApp() {
       if (!confirm('⚠️ Päivitys tyhjentää paikalliset tiedot ja hakee uusimman version.\n\nJatketaanko?')) return;
