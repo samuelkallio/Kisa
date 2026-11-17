@@ -1,17 +1,12 @@
 <!--
   3 Erää - Turnausjärjestelmä
-  Versio: 1.9.1
+  Versio: 1.9.2
   Muutokset:
-    - Korjattu tallennuksen jumiutuminen: withAuthRetry käyttää nyt aikakatkaisua
-      (12 s / yritys, kaksi yritystä). Jos yhteys ei vastaa, käyttäjä saa selvän virheen
-      sen sijaan että nappi jäisi ikuisesti "Tallennetaan..."-tilaan.
-    - Pelaajan kenttäkortit avattaviksi/kiinni pantaviksi. Oma kenttä auki oletuksena,
-      muut kiinni. Tila säilyy uudelleenrenderöinnissä, jotta pelaaja voi pitää useita
-      kenttiä auki samanaikaisesti (esim. kirjatessaan kahden kentän tuloksia).
-    - Pelaajan "Muokkaa"-nappi sallii nyt kaikkien kenttien tulosten muokkauksen
-      (yhdenmukainen kuin tulosten syöttökin).
-    - Varmistettu että pelaajan hampurilaisvalikossa on "Sijoitukset" ja "Jaa pelaajille".
-    - Poistettu vanha kenttävalitsin (korvattu avattavilla korteilla).
+    - App Check (reCAPTCHA v3) poistettu kokonaan. Turvallisuus palautettu
+      auth != null -tasolle, joka oli käytössä ennen captchan lisäystä.
+    - Säilytetty 1.9.1:n parannukset: aikakatkaisuun perustuva tallennus
+      (ei enää jumiutumista), automaattinen re-auth, avattavat kenttäkortit,
+      pelaajan hamburger-valikon Sijoitukset ja Jaa pelaajille.
 -->
 <!DOCTYPE html>
 <html lang="fi">
@@ -196,225 +191,48 @@
     .spinner { width: 40px; height: 40px; border: 4px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 12px; }
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    /* TV VIEW */
-    #view-tv {
-      display: none;
-      position: fixed;
-      inset: 0;
-      background: #0a0a0f;
-      overflow: hidden;
-      z-index: 1;
-    }
-    #tvFit {
-      position: absolute;
-      top: 0;
-      left: 0;
-      min-width: 100%;
-      min-height: 100%;
-      display: flex;
-      flex-direction: column;
-      gap: 1vmin;
-      padding: 1vmin;
-      background: #0a0a0f;
-      color: #fff;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      transform-origin: 0 0;
-      will-change: transform;
-    }
+    #view-tv { display: none; position: fixed; inset: 0; background: #0a0a0f; overflow: hidden; z-index: 1; }
+    #tvFit { position: absolute; top: 0; left: 0; min-width: 100%; min-height: 100%; display: flex; flex-direction: column; gap: 1vmin; padding: 1vmin; background: #0a0a0f; color: #fff; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; transform-origin: 0 0; will-change: transform; }
 
-    .tv-top {
-      flex-shrink: 0;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 1.5vmin;
-      padding-bottom: 0.8vmin;
-      border-bottom: 2px solid #2a2a3a;
-    }
+    .tv-top { flex-shrink: 0; display: flex; justify-content: space-between; align-items: center; gap: 1.5vmin; padding-bottom: 0.8vmin; border-bottom: 2px solid #2a2a3a; }
     .tv-top-info { flex: 1; min-width: 0; }
-    .tv-title {
-      font-size: clamp(22px, 3.2vmin, 52px);
-      font-weight: 800;
-      line-height: 1.1;
-      color: #fff;
-      margin: 0 0 0.2em;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .tv-status {
-      font-size: clamp(13px, 1.9vmin, 26px);
-      color: #9aa1b1;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
+    .tv-title { font-size: clamp(22px, 3.2vmin, 52px); font-weight: 800; line-height: 1.1; color: #fff; margin: 0 0 0.2em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tv-status { font-size: clamp(13px, 1.9vmin, 26px); color: #9aa1b1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .tv-status strong { color: #7d8bff; }
-    .tv-qr {
-      flex-shrink: 0;
-      text-align: center;
-    }
-    .tv-qr img {
-      display: block;
-      background: white;
-      padding: 0.5vmin;
-      border-radius: 6px;
-      width: clamp(64px, 10vmin, 130px);
-      height: clamp(64px, 10vmin, 130px);
-      object-fit: contain;
-    }
-    .tv-qr-label {
-      font-size: clamp(8px, 1.1vmin, 14px);
-      color: #9aa1b1;
-      margin-top: 0.3vmin;
-      white-space: nowrap;
-    }
+    .tv-qr { flex-shrink: 0; text-align: center; }
+    .tv-qr img { display: block; background: white; padding: 0.5vmin; border-radius: 6px; width: clamp(64px, 10vmin, 130px); height: clamp(64px, 10vmin, 130px); object-fit: contain; }
+    .tv-qr-label { font-size: clamp(8px, 1.1vmin, 14px); color: #9aa1b1; margin-top: 0.3vmin; white-space: nowrap; }
 
-    .tv-content {
-      flex: 1;
-      min-height: 0;
-      display: grid;
-      grid-template-columns: minmax(0, 1fr);
-      gap: 1vmin;
-    }
-    @media (min-aspect-ratio: 4/5) {
-      .tv-content {
-        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-      }
-    }
+    .tv-content { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 1vmin; }
+    @media (min-aspect-ratio: 4/5) { .tv-content { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
 
-    .tv-section {
-      min-width: 0;
-      min-height: 0;
-      display: flex;
-      flex-direction: column;
-      gap: 0.6vmin;
-      overflow: hidden;
-    }
-    .tv-section-title {
-      flex-shrink: 0;
-      font-size: clamp(11px, 1.5vmin, 18px);
-      font-weight: 800;
-      color: #7d8bff;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-    }
+    .tv-section { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 0.6vmin; overflow: hidden; }
+    .tv-section-title { flex-shrink: 0; font-size: clamp(11px, 1.5vmin, 18px); font-weight: 800; color: #7d8bff; text-transform: uppercase; letter-spacing: 0.08em; }
 
-    .tv-courts {
-      flex: 1;
-      min-height: 0;
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
-      gap: 0.6vmin;
-      align-content: start;
-      overflow: hidden;
-    }
-    .tv-court {
-      background: #171a22;
-      border-radius: 8px;
-      padding: 0.7vmin 0.9vmin;
-      border-left: 3px solid #7d8bff;
-      min-width: 0;
-      display: flex;
-      flex-direction: column;
-      gap: 0.2vmin;
-    }
+    .tv-courts { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); gap: 0.6vmin; align-content: start; overflow: hidden; }
+    .tv-court { background: #171a22; border-radius: 8px; padding: 0.7vmin 0.9vmin; border-left: 3px solid #7d8bff; min-width: 0; display: flex; flex-direction: column; gap: 0.2vmin; }
     .tv-court.rest { border-left-color: #fbd38d; }
-    .tv-court-title {
-      font-size: clamp(11px, 1.6vmin, 20px);
-      font-weight: 800;
-      color: #fff;
-      margin-bottom: 0.2vmin;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .tv-round {
-      padding: 0.4vmin 0.6vmin;
-      background: #1f232e;
-      border-radius: 4px;
-      font-size: clamp(10px, 1.4vmin, 17px);
-      line-height: 1.25;
-      min-width: 0;
-      overflow: hidden;
-    }
+    .tv-court-title { font-size: clamp(11px, 1.6vmin, 20px); font-weight: 800; color: #fff; margin-bottom: 0.2vmin; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tv-round { padding: 0.4vmin 0.6vmin; background: #1f232e; border-radius: 4px; font-size: clamp(10px, 1.4vmin, 17px); line-height: 1.25; min-width: 0; overflow: hidden; }
     .tv-round.done { background: #16351f; border-left: 2px solid #7ee2a0; }
     .tv-round.pending { background: #2a2410; border-left: 2px solid #ffd27a; }
-    .tv-round .teams {
-      font-weight: 600;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
+    .tv-round .teams { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .tv-round .result { color: #7ee2a0; font-weight: 800; margin-left: 0.4vmin; white-space: nowrap; }
 
-    .tv-standings {
-      flex: 1;
-      min-height: 0;
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
-      gap: 0.6vmin;
-      align-content: start;
-      overflow: hidden;
-    }
-    .tv-court-standings {
-      background: #171a22;
-      border-radius: 8px;
-      padding: 0.7vmin 0.9vmin;
-      min-width: 0;
-      overflow: hidden;
-    }
-    .tv-court-standings-title {
-      font-size: clamp(11px, 1.4vmin, 16px);
-      font-weight: 800;
-      color: #7d8bff;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      margin-bottom: 0.3vmin;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .tv-table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: clamp(10px, 1.3vmin, 15px);
-      table-layout: fixed;
-    }
-    .tv-table th {
-      text-align: left;
-      color: #9aa1b1;
-      padding: 0.25vmin 0.35vmin;
-      border-bottom: 1px solid #2a2f3c;
-      font-size: clamp(9px, 1.1vmin, 13px);
-      text-transform: uppercase;
-      letter-spacing: 0.03em;
-      white-space: nowrap;
-      font-weight: 700;
-    }
+    .tv-standings { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: 0.6vmin; align-content: start; overflow: hidden; }
+    .tv-court-standings { background: #171a22; border-radius: 8px; padding: 0.7vmin 0.9vmin; min-width: 0; overflow: hidden; }
+    .tv-court-standings-title { font-size: clamp(11px, 1.4vmin, 16px); font-weight: 800; color: #7d8bff; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.3vmin; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tv-table { width: 100%; border-collapse: collapse; font-size: clamp(10px, 1.3vmin, 15px); table-layout: fixed; }
+    .tv-table th { text-align: left; color: #9aa1b1; padding: 0.25vmin 0.35vmin; border-bottom: 1px solid #2a2f3c; font-size: clamp(9px, 1.1vmin, 13px); text-transform: uppercase; letter-spacing: 0.03em; white-space: nowrap; font-weight: 700; }
     .tv-table th:first-child { width: 1.8em; }
     .tv-table th:nth-child(2) { width: auto; }
-    .tv-table th:nth-child(3),
-    .tv-table th:nth-child(4) { width: 3.2em; text-align: right; }
+    .tv-table th:nth-child(3), .tv-table th:nth-child(4) { width: 3.2em; text-align: right; }
     .tv-table th:last-child { width: 4.2em; text-align: center; }
-    .tv-table td {
-      padding: 0.25vmin 0.35vmin;
-      border-bottom: 1px solid #2a2f3c;
-      color: #fff;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
+    .tv-table td { padding: 0.25vmin 0.35vmin; border-bottom: 1px solid #2a2f3c; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .tv-table td:nth-child(2) { overflow: hidden; text-overflow: ellipsis; }
     .tv-table tr.top { background: #1e2440; font-weight: 700; }
     .tv-num { text-align: right; font-variant-numeric: tabular-nums; }
-    .tv-prog {
-      font-family: ui-monospace, monospace;
-      color: #9aa1b1;
-      text-align: center;
-      font-size: clamp(9px, 1.15vmin, 13px);
-      overflow: hidden;
-    }
+    .tv-prog { font-family: ui-monospace, monospace; color: #9aa1b1; text-align: center; font-size: clamp(9px, 1.15vmin, 13px); overflow: hidden; }
     .tv-prog .sep { color: #4a5568; }
 
     .hamburger-section-label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); font-weight: 700; margin: 16px 0 6px; }
@@ -498,7 +316,6 @@
     </div>
   </div>
 
-  <!-- TV VIEW -->
   <div id="view-tv">
     <div id="tvFit">
       <div class="tv-top">
@@ -643,7 +460,6 @@
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
     import { getDatabase, ref, set, get, onValue, update, remove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
     import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-    import { initializeAppCheck, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app-check.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyCh1kTTHGf5cgwT1ybPsTFE8LUniaKjkU8",
@@ -655,26 +471,11 @@
       appId: "1:305285451356:web:1073e301fca718d273a099"
     };
 
-    // ============================================================
-    // APP CHECK – KORVAA TÄMÄ OMAVALLA reCAPTCHA v3 -SITE KEYLLÄ
-    // ============================================================
-    const RECAPTCHA_SITE_KEY = 'KORVAA-TAMA-reCAPTCHA-v3-site-key';
-
     const app = initializeApp(firebaseConfig);
-
-    if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
-      self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;
-    }
-
-    const appCheck = initializeAppCheck(app, {
-      provider: new ReCaptchaV3Provider(RECAPTCHA_SITE_KEY),
-      isTokenAutoRefreshEnabled: true
-    });
-
     const db = getDatabase(app);
     const auth = getAuth(app);
     const $ = id => document.getElementById(id);
-    const APP_VERSION = '1.9.1';
+    const APP_VERSION = '1.9.2';
     const MAX_POINT_DIFF = 5;
     const ID_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     const OP_TIMEOUT_MS = 12000;
@@ -790,9 +591,6 @@
       await signInAnonymously(auth);
     }
 
-    // Aikakatkaisuun perustuva suoritin: jos Firebase-operaatio ei vastaa
-    // OP_TIMEOUT_MS:n kuluessa, heitetään selkeä virhe sen sijaan että
-    // käyttöliittymä jäisi ikuisesti "Tallennetaan..."-tilaan.
     function withTimeout(promise, timeoutMs = OP_TIMEOUT_MS) {
       return new Promise((resolve, reject) => {
         let settled = false;
@@ -809,9 +607,6 @@
       });
     }
 
-    // Suorittaa fn():n aikakatkaisulla. Jos aikakatkaisu tai permission-virhe,
-    // yrittää uudelleenkirjautumista ja toistaa kerran. Toinen aikakatkaisu
-    // heittää virheen, jolloin kutsuja voi näyttää selvän virheilmoituksen.
     async function withAuthRetry(fn, timeoutMs = OP_TIMEOUT_MS) {
       try {
         return await withTimeout(Promise.resolve().then(fn), timeoutMs);
@@ -870,7 +665,6 @@
           collapsedPlayerCourts.add(c.courtIndex);
         }
       });
-      // Jos pelaajalla ei ole omaa kenttää (esim. ei pelaa tällä hetkellä), avataan ensimmäinen
       if (!firstOpened && (d.courts || []).length > 0) {
         collapsedPlayerCourts.delete(d.courts[0].courtIndex);
       }
@@ -1452,7 +1246,6 @@
         return;
       }
       if (currentRole === 'player') {
-        // Pelaaja: näytetään kaikki kentät avattavina kortteina. Oma kenttä auki oletuksena.
         ensurePlayerCourtCollapseState(d);
         const sorted = [...(d.courts || [])].sort((a, b) => {
           const aM = a.courtIndex === myCourtIdx ? 0 : 1;
@@ -1475,7 +1268,6 @@
         });
         return;
       }
-      // Organisaattori: kaikki kentät auki, ei avattavuutta
       const sorted = [...(d.courts || [])];
       if (myCourtIdx >= 0) {
         sorted.sort((a, b) => {
@@ -2063,9 +1855,6 @@
       } catch(e) { hideLoading(); alert('Virhe: ' + e.message); }
     }
 
-    // ============================================================
-    // TV MODE
-    // ============================================================
     function initTVMode() {
       tvMode = true;
       document.body.classList.add('tv-mode');
@@ -2531,19 +2320,6 @@
           '</div>';
         return;
       }
-
-      // Diagnostiikka: tarkistetaan App Check -token taustalla (ei estä käynnistystä)
-      setTimeout(async () => {
-        try {
-          if (appCheck && typeof appCheck.getToken === 'function') {
-            await appCheck.getToken(false);
-            console.log('✅ App Check OK');
-          }
-        } catch(e) {
-          console.error('⚠️ App Check token failed:', e);
-        }
-      }, 2000);
-
       try {
         const raw = safeGet('APP_ui_scale', '0');
         const num = parseFloat(raw);
