@@ -1,11 +1,9 @@
 <!--
   3 Erää - Turnausjärjestelmä
-  Versio: 1.8.0
-  Muutokset: Dynaaminen taukokäsittely – taukovuorot siirtyvät kenttien välillä
-             (5p-kentät voivat olla eri kenttänumeroilla eri kierroksilla).
-             Rest-seuranta koko tapahtuman ajalta, kovan rajoitteen estäminen
-             peräkkäisille tauoille, kenttien valinta "eniten ei-vielä-tauolla
-             -pelaajia" -periaatteella. Pelaajien siirtymislogiikka säilyy.
+  Versio: 1.8.1
+  Muutokset: Firebase-turvasääntöjen tuki – anonyymi kirjautuminen pakollinen,
+             withAuthRetry automaattisella uudelleenkirjautumisella,
+             selkeä virheilmoitus jos auth epäonnistuu, listenEvent-virheenkäsittely.
 -->
 <!DOCTYPE html>
 <html lang="fi">
@@ -190,9 +188,7 @@
     .spinner { width: 40px; height: 40px; border: 4px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 12px; }
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    /* ============================================================
-       TV VIEW
-       ============================================================ */
+    /* TV VIEW */
     #view-tv {
       display: none;
       position: fixed;
@@ -654,7 +650,7 @@
     const db = getDatabase(app);
     const auth = getAuth(app);
     const $ = id => document.getElementById(id);
-    const APP_VERSION = '1.8.0';
+    const APP_VERSION = '1.8.1';
     const MAX_POINT_DIFF = 5;
     const ID_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
@@ -747,6 +743,33 @@
       });
     }
 
+    function isPermissionError(e) {
+      if (!e) return false;
+      const code = String(e.code || '').toUpperCase();
+      const msg = String(e.message || '').toLowerCase();
+      return code.includes('PERMISSION') || msg.includes('permission_denied') || msg.includes('permission denied');
+    }
+
+    async function reauth() {
+      if (auth.currentUser) {
+        try { await auth.currentUser.getIdToken(true); return; } catch(_) {}
+      }
+      await signInAnonymously(auth);
+    }
+
+    // Suorittaa fn():n; permission-virheessä yrittää uudelleenkirjautumista ja toistaa kerran.
+    async function withAuthRetry(fn) {
+      try {
+        return await fn();
+      } catch (e) {
+        if (isPermissionError(e)) {
+          try { await reauth(); } catch(_) {}
+          return await fn();
+        }
+        throw e;
+      }
+    }
+
     function setTopbar(name, code) {
       const textEl = $('topbarTitleText');
       const codeEl = $('topbarTitleCode');
@@ -789,8 +812,6 @@
       return [...withFirst, ...withoutFirst];
     }
 
-    // Valitsee 3 taukoajaa (erät 0,1,2) 5p-kentälle.
-    // lastCompletedCycleIndex = juuri päättyneen kierroksen indeksi.
     function selectRestersForCycle(players, restCounts, lastRestCycle, lastCompletedCycleIndex) {
       const available = players.filter(p => (lastRestCycle[p] ?? -1000) !== lastCompletedCycleIndex);
       const recently  = players.filter(p => (lastRestCycle[p] ?? -1000) === lastCompletedCycleIndex);
@@ -816,7 +837,6 @@
       ];
     }
 
-    // resters = [r0, r1, r2] = ketkä restaa erissä 0,1,2.
     function generateCourtRounds5p(players, resters) {
       const [r0, r1, r2] = resters;
       const non = players.filter(p => !resters.includes(p));
@@ -828,7 +848,6 @@
       ];
     }
 
-    // Alkukentät: koot 4...4,5...5 (5p alimpina). Käytetään myös savePlayerChangesissa.
     function computeInitialCourts(playerNames, restCounts = {}, lastRestCycle = {}, lastCompletedCycleIndex = -1) {
       const n = playerNames.length;
       let remaining = n;
@@ -857,7 +876,6 @@
       return courts;
     }
 
-    // Rajasiirrot kuten ennenkin; palauttaa pelkät pelaajalistat (koot säilyvät).
     function boundaryExchangePlayers(oldCourts, standings) {
       const N = oldCourts.length;
       const rank = {};
@@ -881,8 +899,6 @@
       });
     }
 
-    // Tasapainottaa pelaajamäärät tavoiteltuihin kokoihin. Ylimääräiset työnnetään alas,
-    // alijäämä täytetään ylempää parhailla pelaajilla (kaskadi).
     function rebalanceCourtSizes(lists, targetSizes, rankMap) {
       const N = lists.length;
       const working = lists.map(l => [...l]);
@@ -907,7 +923,6 @@
       return working;
     }
 
-    // Valitsee 5p-kenttien sijainnit: brute-force kaikki yhdistelmät, paras pisteytys.
     function determineTargetSizes(exchangedLists, N, rankMap, restCounts, lastRestCycle, lastCompletedCycleIndex) {
       const n = exchangedLists.reduce((s, l) => s + l.length, 0);
       const k = n - 4 * N;
@@ -938,7 +953,6 @@
       return bestSizes || Array.from({ length: N }, (_, i) => i >= N - k ? 5 : 4);
     }
 
-    // Koko seuraavan kierroksen laskenta. Palauttaa { courts, restCounts, lastRestCycle }.
     function computeNextCycle(eventData) {
       const lastCompletedCycleIndex = (eventData.previousCycles || []).length;
 
@@ -949,7 +963,6 @@
       const restCounts = { ...(eventData.restCounts || {}) };
       const lastRestCycle = { ...(eventData.lastRestCycle || {}) };
 
-      // Päivitä rest-tiedot juuri päättyneestä kierroksesta
       (eventData.courts || []).forEach(court => {
         (court.rounds || []).forEach(round => {
           if (round.resting) {
@@ -1140,14 +1153,17 @@
       let playerCode;
       for (let i = 0; i < 10; i++) {
         const candidate = generateId();
-        const exists = await get(ref(db, 'events/' + candidate));
+        const exists = await withAuthRetry(() => get(ref(db, 'events/' + candidate)));
         if (!exists.exists()) { playerCode = candidate; break; }
       }
       if (!playerCode) throw new Error('Koodin luonti epäonnistui.');
       let organizerCode;
       for (let i = 0; i < 10; i++) {
         const candidate = generateId();
-        const [ev, oc] = await Promise.all([get(ref(db, 'events/' + candidate)), get(ref(db, 'organizerCodes/' + candidate))]);
+        const [ev, oc] = await Promise.all([
+          withAuthRetry(() => get(ref(db, 'events/' + candidate))),
+          withAuthRetry(() => get(ref(db, 'organizerCodes/' + candidate)))
+        ]);
         if (!ev.exists() && !oc.exists()) { organizerCode = candidate; break; }
       }
       if (!organizerCode) throw new Error('Järjestäjäkoodin luonti epäonnistui.');
@@ -1157,21 +1173,28 @@
         rounds: [{ roundIndex: 0, results: {} }, { roundIndex: 1, results: {} }, { roundIndex: 2, results: {} }],
         previousCycles: [], restCounts: {}, lastRestCycle: {}, status: 'active', createdAt: new Date().toISOString()
       };
-      await set(ref(db, 'events/' + playerCode), eventData);
-      await set(ref(db, 'organizerCodes/' + organizerCode), playerCode);
+      await withAuthRetry(() => set(ref(db, 'events/' + playerCode), eventData));
+      await withAuthRetry(() => set(ref(db, 'organizerCodes/' + organizerCode), playerCode));
       return { playerCode, organizerCode };
     }
 
     async function loadEvent(eventId) {
-      const snap = await get(ref(db, 'events/' + eventId));
+      const snap = await withAuthRetry(() => get(ref(db, 'events/' + eventId)));
       return snap.exists() ? snap.val() : null;
     }
 
     function listenEvent(eventId, callback) {
       if (unsubscribeEvent) { unsubscribeEvent(); unsubscribeEvent = null; }
-      unsubscribeEvent = onValue(ref(db, 'events/' + eventId), (snapshot) => {
-        callback(snapshot.exists() ? snapshot.val() : null);
-      });
+      unsubscribeEvent = onValue(
+        ref(db, 'events/' + eventId),
+        (snapshot) => { callback(snapshot.exists() ? snapshot.val() : null); },
+        (error) => {
+          console.error('Firebase listen error:', error);
+          if (isPermissionError(error)) {
+            reauth().catch(e => console.error('Re-auth failed', e));
+          }
+        }
+      );
     }
 
     async function deleteEvent() {
@@ -1182,8 +1205,8 @@
       try {
         const playerCode = currentEventData.playerCode || currentEventId;
         const organizerCode = currentEventData.organizerCode;
-        if (playerCode) await remove(ref(db, 'events/' + playerCode));
-        if (organizerCode) await remove(ref(db, 'organizerCodes/' + organizerCode));
+        if (playerCode) await withAuthRetry(() => remove(ref(db, 'events/' + playerCode)));
+        if (organizerCode) await withAuthRetry(() => remove(ref(db, 'organizerCodes/' + organizerCode)));
         removeRecentEvent(playerCode);
         if (unsubscribeEvent) { unsubscribeEvent(); unsubscribeEvent = null; }
         currentEventId = null; currentEventData = null; currentRole = null; currentPlayerName = null;
@@ -1199,10 +1222,17 @@
     }
 
     async function resolveEventCode(code) {
-      try { const snap = await get(ref(db, 'events/' + code)); if (snap.exists()) return { eventId: code, eventData: snap.val(), role: 'player' }; } catch(e) {}
       try {
-        const idx = await get(ref(db, 'organizerCodes/' + code));
-        if (idx.exists()) { const eventId = idx.val(); const snap = await get(ref(db, 'events/' + eventId)); if (snap.exists()) return { eventId, eventData: snap.val(), role: 'organizer' }; }
+        const snap = await withAuthRetry(() => get(ref(db, 'events/' + code)));
+        if (snap.exists()) return { eventId: code, eventData: snap.val(), role: 'player' };
+      } catch(e) {}
+      try {
+        const idx = await withAuthRetry(() => get(ref(db, 'organizerCodes/' + code)));
+        if (idx.exists()) {
+          const eventId = idx.val();
+          const snap = await withAuthRetry(() => get(ref(db, 'events/' + eventId)));
+          if (snap.exists()) return { eventId, eventData: snap.val(), role: 'organizer' };
+        }
       } catch(e) {}
       return null;
     }
@@ -1396,8 +1426,8 @@
 
     async function saveRoundResult(courtIdx, roundIdx, s1, s2) {
       if (s1 === s2) { alert('Erässä ei voi olla tasapeliä.'); return false; }
-      const checkRef = ref(db, `events/${currentEventId}/rounds/${roundIdx}/results/${courtIdx}`);
-      await set(checkRef, { team1Score: s1, team2Score: s2, timestamp: new Date().toISOString() });
+      const data = { team1Score: s1, team2Score: s2, timestamp: new Date().toISOString() };
+      await withAuthRetry(() => set(ref(db, `events/${currentEventId}/rounds/${roundIdx}/results/${courtIdx}`), data));
       return true;
     }
 
@@ -1663,11 +1693,11 @@
           if (s1 === s2) { alert('Erässä ei voi olla tasapeliä.'); return; }
           el.disabled = true; el.textContent = '...';
           try {
-            await set(ref(db, `events/${currentEventId}/previousCycles/${cycIdx}/rounds/${rIdx}/results/${courtIdx}`), { team1Score: s1, team2Score: s2, timestamp: new Date().toISOString() });
+            await withAuthRetry(() => set(ref(db, `events/${currentEventId}/previousCycles/${cycIdx}/rounds/${rIdx}/results/${courtIdx}`), { team1Score: s1, team2Score: s2, timestamp: new Date().toISOString() }));
             const freshData = await loadEvent(currentEventId);
             const pc = freshData.previousCycles[cycIdx];
             const newStandings = computeStandings({ courts: pc.courts, rounds: pc.rounds, playerNames: freshData.playerNames });
-            await set(ref(db, `events/${currentEventId}/previousCycles/${cycIdx}/standings`), newStandings);
+            await withAuthRetry(() => set(ref(db, `events/${currentEventId}/previousCycles/${cycIdx}/standings`), newStandings));
             editingHistory.delete(`${cycIdx}-${courtIdx}-${rIdx}`);
           } catch(e) {
             alert('Virhe: ' + e.message);
@@ -1832,7 +1862,7 @@
             }
           }
         });
-        await update(ref(db, 'events/' + currentEventId), { playerNames: managingPlayersList, courts: newCourts, rounds: newRounds });
+        await withAuthRetry(() => update(ref(db, 'events/' + currentEventId), { playerNames: managingPlayersList, courts: newCourts, rounds: newRounds }));
         if (currentPlayerName && !managingPlayersList.includes(currentPlayerName)) {
           currentPlayerName = null;
           const entry = getEventEntry(currentEventId);
@@ -1885,9 +1915,9 @@
         const prevCycle = { courts: fresh.courts, rounds: fresh.rounds, standings, completedAt: new Date().toISOString() };
         const cycles = [...(fresh.previousCycles || []), prevCycle].slice(-50);
         const newRounds = [{ roundIndex: 0, results: {} }, { roundIndex: 1, results: {} }, { roundIndex: 2, results: {} }];
-        await update(ref(db, 'events/' + currentEventId), {
+        await withAuthRetry(() => update(ref(db, 'events/' + currentEventId), {
           previousCycles: cycles, courts: newCourts, rounds: newRounds, restCounts, lastRestCycle
-        });
+        }));
         editingRounds.clear(); playerViewCourtOverride = null;
         hideLoading();
         showView('view-event'); switchTab('history');
@@ -2353,7 +2383,23 @@
     }
 
     async function main() {
-      try { await ensureAuth(); } catch(e) { console.warn('Auth failed', e); }
+      // Auth on pakollinen uusien sääntöjen kanssa
+      let authOk = false;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try { await ensureAuth(); authOk = true; break; }
+        catch(e) {
+          console.warn('Auth attempt failed', attempt, e);
+          await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
+        }
+      }
+      if (!authOk) {
+        document.body.innerHTML = '<div style="padding:40px;text-align:center;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,sans-serif;">' +
+          '<h2 style="color:#c62828;">⚠️ Yhteyttä ei saatu</h2>' +
+          '<p style="color:#5a6172;">Kirjautuminen Firebaseen epäonnistui. Tarkista verkkoyhteys ja lataa sivu uudelleen.</p>' +
+          '<button onclick="location.reload()" style="padding:12px 24px;font-size:1rem;border-radius:8px;border:none;background:#4a5df9;color:#fff;font-weight:700;cursor:pointer;margin-top:16px;">Lataa uudelleen</button>' +
+          '</div>';
+        return;
+      }
       try {
         const raw = safeGet('APP_ui_scale', '0');
         const num = parseFloat(raw);
