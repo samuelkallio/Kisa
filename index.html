@@ -1,9 +1,17 @@
 <!--
   3 Erää - Turnausjärjestelmä
-  Versio: 1.9.0
-  Muutokset: Firebase App Check (reCAPTCHA v3) käyttöönotettu.
-             App Check alustetaan ennen authia ja Firebase-palveluita.
-             Debug-token tuki localhost-kehitykseen.
+  Versio: 1.9.1
+  Muutokset:
+    - Korjattu tallennuksen jumiutuminen: withAuthRetry käyttää nyt aikakatkaisua
+      (12 s / yritys, kaksi yritystä). Jos yhteys ei vastaa, käyttäjä saa selvän virheen
+      sen sijaan että nappi jäisi ikuisesti "Tallennetaan..."-tilaan.
+    - Pelaajan kenttäkortit avattaviksi/kiinni pantaviksi. Oma kenttä auki oletuksena,
+      muut kiinni. Tila säilyy uudelleenrenderöinnissä, jotta pelaaja voi pitää useita
+      kenttiä auki samanaikaisesti (esim. kirjatessaan kahden kentän tuloksia).
+    - Pelaajan "Muokkaa"-nappi sallii nyt kaikkien kenttien tulosten muokkauksen
+      (yhdenmukainen kuin tulosten syöttökin).
+    - Varmistettu että pelaajan hampurilaisvalikossa on "Sijoitukset" ja "Jaa pelaajille".
+    - Poistettu vanha kenttävalitsin (korvattu avattavilla korteilla).
 -->
 <!DOCTYPE html>
 <html lang="fi">
@@ -654,12 +662,10 @@
 
     const app = initializeApp(firebaseConfig);
 
-    // Debug-token localhost-kehitykseen (poista tai jätä ennalleen tuotannossa)
     if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
       self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;
     }
 
-    // App Check on alustettava ennen kuin mitään Firebase-palvelua käytetään
     const appCheck = initializeAppCheck(app, {
       provider: new ReCaptchaV3Provider(RECAPTCHA_SITE_KEY),
       isTokenAutoRefreshEnabled: true
@@ -668,9 +674,10 @@
     const db = getDatabase(app);
     const auth = getAuth(app);
     const $ = id => document.getElementById(id);
-    const APP_VERSION = '1.9.0';
+    const APP_VERSION = '1.9.1';
     const MAX_POINT_DIFF = 5;
     const ID_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    const OP_TIMEOUT_MS = 12000;
 
     let currentEventId = null;
     let currentEventData = null;
@@ -682,11 +689,15 @@
     let managingPlayersList = [];
     let tvMode = false;
     let currentView = 'view-home';
-    let playerViewCourtOverride = null;
     let lastCycleCount = 0;
     let tvQrGenerated = false;
     const editingRounds = new Set();
     const editingHistory = new Set();
+
+    // Pelaajan kenttäkorttien avaus/kiinnipano-tila
+    let collapsedPlayerCourts = null;
+    let lastCollapseStateCycle = -1;
+    let lastCollapseStatePlayer = null;
 
     function safeGet(k, d=null) { try { const v = localStorage.getItem(k); return v===null?d:v; } catch(e){ return d; } }
     function safeSet(k, v) { try { localStorage.setItem(k, String(v)); } catch(e){} }
@@ -768,6 +779,10 @@
       return code.includes('PERMISSION') || msg.includes('permission_denied') || msg.includes('permission denied');
     }
 
+    function isTimeoutError(e) {
+      return !!(e && e.message && e.message.indexOf('Aikakatkaisu') === 0);
+    }
+
     async function reauth() {
       if (auth.currentUser) {
         try { await auth.currentUser.getIdToken(true); return; } catch(_) {}
@@ -775,13 +790,35 @@
       await signInAnonymously(auth);
     }
 
-    async function withAuthRetry(fn) {
+    // Aikakatkaisuun perustuva suoritin: jos Firebase-operaatio ei vastaa
+    // OP_TIMEOUT_MS:n kuluessa, heitetään selkeä virhe sen sijaan että
+    // käyttöliittymä jäisi ikuisesti "Tallennetaan..."-tilaan.
+    function withTimeout(promise, timeoutMs = OP_TIMEOUT_MS) {
+      return new Promise((resolve, reject) => {
+        let settled = false;
+        const timer = setTimeout(() => {
+          if (!settled) {
+            settled = true;
+            reject(new Error('Aikakatkaisu – yhteys Firebaseen ei vastaa. Tarkista verkkoyhteys ja yritä uudelleen.'));
+          }
+        }, timeoutMs);
+        Promise.resolve(promise).then(
+          (v) => { if (!settled) { settled = true; clearTimeout(timer); resolve(v); } },
+          (e) => { if (!settled) { settled = true; clearTimeout(timer); reject(e); } }
+        );
+      });
+    }
+
+    // Suorittaa fn():n aikakatkaisulla. Jos aikakatkaisu tai permission-virhe,
+    // yrittää uudelleenkirjautumista ja toistaa kerran. Toinen aikakatkaisu
+    // heittää virheen, jolloin kutsuja voi näyttää selvän virheilmoituksen.
+    async function withAuthRetry(fn, timeoutMs = OP_TIMEOUT_MS) {
       try {
-        return await fn();
+        return await withTimeout(Promise.resolve().then(fn), timeoutMs);
       } catch (e) {
-        if (isPermissionError(e)) {
+        if (isPermissionError(e) || isTimeoutError(e)) {
           try { await reauth(); } catch(_) {}
-          return await fn();
+          return await withTimeout(Promise.resolve().then(fn), timeoutMs);
         }
         throw e;
       }
@@ -815,6 +852,46 @@
     function getCourtResult(eventData, r, c) { const rd = eventData?.rounds?.[r]; if (!rd || !rd.results) return null; return rd.results[c] || null; }
     function getRoundPairing(court, r) { return court?.rounds?.[r] || null; }
     function formatTimestamp(iso) { try { return new Date(iso).toLocaleString('fi-FI'); } catch { return String(iso); } }
+
+    // ============================================================
+    // KENTTÄKORTTIEN AVAUS/KIINNIPANO – PELAAJAN NÄKYMÄ
+    // ============================================================
+    function resetPlayerCourtCollapse(d) {
+      const cycleCount = (d.previousCycles || []).length;
+      const myCourtIdx = currentPlayerName
+        ? (d.courts || []).find(c => (c.players || []).includes(currentPlayerName))?.courtIndex
+        : undefined;
+      collapsedPlayerCourts = new Set();
+      let firstOpened = false;
+      (d.courts || []).forEach(c => {
+        if (c.courtIndex === myCourtIdx) {
+          firstOpened = true;
+        } else {
+          collapsedPlayerCourts.add(c.courtIndex);
+        }
+      });
+      // Jos pelaajalla ei ole omaa kenttää (esim. ei pelaa tällä hetkellä), avataan ensimmäinen
+      if (!firstOpened && (d.courts || []).length > 0) {
+        collapsedPlayerCourts.delete(d.courts[0].courtIndex);
+      }
+      lastCollapseStateCycle = cycleCount;
+      lastCollapseStatePlayer = currentPlayerName;
+    }
+
+    function ensurePlayerCourtCollapseState(d) {
+      const cycleCount = (d.previousCycles || []).length;
+      if (collapsedPlayerCourts === null
+          || cycleCount !== lastCollapseStateCycle
+          || lastCollapseStatePlayer !== currentPlayerName) {
+        resetPlayerCourtCollapse(d);
+      }
+    }
+
+    function togglePlayerCourtCollapse(courtIdx) {
+      if (!collapsedPlayerCourts) collapsedPlayerCourts = new Set();
+      if (collapsedPlayerCourts.has(courtIdx)) collapsedPlayerCourts.delete(courtIdx);
+      else collapsedPlayerCourts.add(courtIdx);
+    }
 
     // ============================================================
     // REST CYCLE LOGIC v2
@@ -1227,7 +1304,8 @@
         removeRecentEvent(playerCode);
         if (unsubscribeEvent) { unsubscribeEvent(); unsubscribeEvent = null; }
         currentEventId = null; currentEventData = null; currentRole = null; currentPlayerName = null;
-        playerViewCourtOverride = null; editingRounds.clear(); editingHistory.clear(); lastCycleCount = 0;
+        editingRounds.clear(); editingHistory.clear(); lastCycleCount = 0;
+        collapsedPlayerCourts = null;
         history.replaceState({}, '', window.location.pathname);
         hideLoading();
         showView('view-home'); renderRecentEvents();
@@ -1301,7 +1379,9 @@
         if (!data) { hideLoading(); alert('Tapahtumaa ei löytynyt.'); return; }
         currentEventData = data;
         lastCycleCount = (data.previousCycles || []).length;
-        playerViewCourtOverride = null;
+        collapsedPlayerCourts = null;
+        lastCollapseStateCycle = -1;
+        lastCollapseStatePlayer = null;
         upsertRecentEvent({ id: eventId, name: data.name || eventId, role: currentRole, myPlayerName: currentPlayerName, playerCount: (data.playerNames || []).length });
         hideLoading();
         showView('view-event');
@@ -1338,7 +1418,7 @@
       if (!currentEventData) return;
       const d = currentEventData;
       const cycleCount = (d.previousCycles || []).length;
-      if (cycleCount !== lastCycleCount) { lastCycleCount = cycleCount; playerViewCourtOverride = null; }
+      if (cycleCount !== lastCycleCount) { lastCycleCount = cycleCount; }
       setTopbar(d.name || d.playerCode || 'Tapahtuma', d.playerCode || currentEventId);
       const st = computeRoundStatus(d);
       const cycleNumber = cycleCount + 1;
@@ -1366,29 +1446,36 @@
       if (currentRole === 'player' && !currentPlayerName) {
         const prompt = document.createElement('div');
         prompt.className = 'card';
-        prompt.innerHTML = `<p>Valitse nimesi, niin näet oman kenttäsi.</p><button id="btnInlineIdentify" type="button">Valitse nimesi</button>`;
+        prompt.innerHTML = `<p>Valitse nimesi, niin näet oman kenttäsi korostettuna.</p><button id="btnInlineIdentify" type="button">Valitse nimesi</button>`;
         container.appendChild(prompt);
         $('btnInlineIdentify').onclick = () => askIdentify();
         return;
       }
       if (currentRole === 'player') {
-        let selectedIdx = myCourtIdx >= 0 ? myCourtIdx : (d.courts[0]?.courtIndex ?? 0);
-        if (playerViewCourtOverride !== null && (d.courts || []).some(c => c.courtIndex === playerViewCourtOverride)) {
-          selectedIdx = playerViewCourtOverride;
-        }
-        const selectedCourt = d.courts.find(c => c.courtIndex === selectedIdx);
-        if (selectedCourt) {
-          const isMine = selectedIdx === myCourtIdx;
-          if (!isMine && myCourtIdx >= 0) {
-            const notice = document.createElement('div');
-            notice.className = 'info-box';
-            notice.innerHTML = `Syötät tuloksia kentälle <strong>K${selectedCourt.courtNumber}</strong>. Oma kenttäsi on <strong>K${d.courts.find(c => c.courtIndex === myCourtIdx)?.courtNumber || '–'}</strong>. Vaihda kenttää valikosta ☰.`;
-            container.appendChild(notice);
-          }
-          container.appendChild(buildCourtCard(selectedCourt, isMine, selectedCourt.players.length === 5));
-        }
+        // Pelaaja: näytetään kaikki kentät avattavina kortteina. Oma kenttä auki oletuksena.
+        ensurePlayerCourtCollapseState(d);
+        const sorted = [...(d.courts || [])].sort((a, b) => {
+          const aM = a.courtIndex === myCourtIdx ? 0 : 1;
+          const bM = b.courtIndex === myCourtIdx ? 0 : 1;
+          if (aM !== bM) return aM - bM;
+          return a.courtNumber - b.courtNumber;
+        });
+        sorted.forEach(court => {
+          const isMine = court.courtIndex === myCourtIdx;
+          const isCollapsed = collapsedPlayerCourts.has(court.courtIndex);
+          const onToggle = () => {
+            togglePlayerCourtCollapse(court.courtIndex);
+            renderTabPlayers();
+          };
+          container.appendChild(buildCourtCard(court, isMine, court.players.length === 5, {
+            collapsible: true,
+            isCollapsed,
+            onToggle
+          }));
+        });
         return;
       }
+      // Organisaattori: kaikki kentät auki, ei avattavuutta
       const sorted = [...(d.courts || [])];
       if (myCourtIdx >= 0) {
         sorted.sort((a, b) => {
@@ -1398,7 +1485,9 @@
           return a.courtNumber - b.courtNumber;
         });
       }
-      sorted.forEach(court => { container.appendChild(buildCourtCard(court, court.courtIndex === myCourtIdx, court.players.length === 5)); });
+      sorted.forEach(court => {
+        container.appendChild(buildCourtCard(court, court.courtIndex === myCourtIdx, court.players.length === 5));
+      });
     }
 
     function renderTabStandings() {
@@ -1448,17 +1537,33 @@
       return true;
     }
 
-    function buildCourtCard(court, isMine, is5p) {
+    function buildCourtCard(court, isMine, is5p, options = {}) {
+      const { collapsible = false, isCollapsed = false, onToggle = null } = options;
       const d = currentEventData;
       const card = document.createElement('div');
       card.className = 'court-card' + (isMine ? ' my-court' : '') + (is5p ? ' rest-court' : '');
-      let html = `<div class="court-title">
-        <span>Kenttä ${court.courtNumber}</span>
-        <span style="display:flex;gap:4px;flex-wrap:wrap;">
+
+      let enteredCount = 0;
+      for (let r = 0; r < 3; r++) if (getCourtResult(d, r, court.courtIndex)) enteredCount++;
+
+      let html = `<div class="court-title" ${collapsible ? 'style="cursor:pointer;user-select:none;"' : ''}>
+        <span style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+          ${collapsible ? `<span style="font-size:0.9em;color:var(--text-muted);">${isCollapsed ? '▶' : '▼'}</span>` : ''}
+          <span>Kenttä ${court.courtNumber}</span>
+        </span>
+        <span style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;">
           ${isMine ? '<span class="court-badge">SINUN KENTTÄSI</span>' : ''}
           ${is5p ? '<span class="tag rest">5 PELAAJAA · TAUKOVUORO</span>' : ''}
+          ${collapsible && isCollapsed ? `<span class="muted" style="font-size:0.78rem;">${enteredCount}/3 erää</span>` : ''}
         </span>
       </div>`;
+
+      if (collapsible && isCollapsed) {
+        card.innerHTML = html;
+        if (onToggle) card.querySelector('.court-title').onclick = onToggle;
+        return card;
+      }
+
       let targetRound = -1;
       for (let r = 0; r < 3; r++) if (!getCourtResult(d, r, court.courtIndex)) { targetRound = r; break; }
       for (let r = 0; r < 3; r++) {
@@ -1468,7 +1573,7 @@
         const isEditing = editingRounds.has(key);
         if (!pair) { html += `<div class="round-row waiting">Erä ${r+1}: tiedot puuttuvat</div>`; continue; }
         if (res && !isEditing) {
-          const canEdit = currentRole === 'organizer' || (currentPlayerName && (pair.team1.includes(currentPlayerName) || pair.team2.includes(currentPlayerName)));
+          const canEdit = currentRole === 'organizer' || currentRole === 'player';
           html += `<div class="round-row done">
             <strong>Erä ${r+1}:</strong> ${pair.team1.join(' & ')} <strong>${res.team1Score}–${res.team2Score}</strong> ${pair.team2.join(' & ')} ✓
             ${pair.resting ? `<span class="tag">Lepo: ${pair.resting}</span>` : ''}
@@ -1498,21 +1603,29 @@
         }
       }
       card.innerHTML = html;
+
+      if (collapsible && onToggle) {
+        card.querySelector('.court-title').onclick = onToggle;
+      }
+
       card.querySelectorAll('[data-edit-court]').forEach(el => {
-        el.onclick = () => {
+        el.onclick = (ev) => {
+          ev.stopPropagation();
           editingRounds.add(`${el.getAttribute('data-edit-court')}-${el.getAttribute('data-edit-round')}`);
           renderTabPlayers();
         };
       });
       card.querySelectorAll('.score-cancel').forEach(el => {
-        el.onclick = () => {
+        el.onclick = (ev) => {
+          ev.stopPropagation();
           editingRounds.delete(`${el.getAttribute('data-court')}-${el.getAttribute('data-round')}`);
           renderTabPlayers();
         };
       });
       const submitBtn = card.querySelector('.score-submit');
       if (submitBtn) {
-        submitBtn.onclick = async () => {
+        submitBtn.onclick = async (ev) => {
+          if (ev) ev.stopPropagation();
           const r = parseInt(submitBtn.getAttribute('data-round'));
           const cIdx = parseInt(submitBtn.getAttribute('data-court'));
           const inputs = card.querySelectorAll(`input[data-court="${cIdx}"][data-round="${r}"]`);
@@ -1520,13 +1633,21 @@
           const s2 = parseInt(inputs[1].value);
           if (isNaN(s1) || isNaN(s2) || s1 < 0 || s2 < 0 || s1 > 99 || s2 > 99) { alert('Syötä molemmat pisteet (0–99).'); return; }
           if (s1 === s2) { alert('Erässä ei voi olla tasapeliä.'); return; }
-          submitBtn.disabled = true; submitBtn.textContent = 'Tallennetaan...';
+          const originalText = isEditing ? 'Tallenna muutos' : 'Tallenna tulos';
+          submitBtn.disabled = true;
+          submitBtn.textContent = 'Tallennetaan...';
           try {
             await saveRoundResult(cIdx, r, s1, s2);
             editingRounds.delete(`${cIdx}-${r}`);
+            if (document.body.contains(submitBtn)) {
+              submitBtn.textContent = '✓ Tallennettu';
+            }
           } catch(e) {
-            alert('Virhe: ' + e.message);
-            submitBtn.disabled = false; submitBtn.textContent = 'Tallenna tulos';
+            if (document.body.contains(submitBtn)) {
+              submitBtn.disabled = false;
+              submitBtn.textContent = originalText;
+            }
+            alert('Tallennus epäonnistui: ' + (e.message || e));
           }
         };
       }
@@ -1935,7 +2056,8 @@
         await withAuthRetry(() => update(ref(db, 'events/' + currentEventId), {
           previousCycles: cycles, courts: newCourts, rounds: newRounds, restCounts, lastRestCycle
         }));
-        editingRounds.clear(); playerViewCourtOverride = null;
+        editingRounds.clear();
+        collapsedPlayerCourts = null;
         hideLoading();
         showView('view-event'); switchTab('history');
       } catch(e) { hideLoading(); alert('Virhe: ' + e.message); }
@@ -2097,24 +2219,14 @@
         if (currentRole === 'organizer') {
           html += `<button id="hamburgerNavAdmin" class="${activeTab === 'admin' ? '' : 'secondary'}" type="button" style="margin-top:6px;">⚙️ Hallinta</button>`;
         }
-        if (currentRole === 'player' && currentPlayerName) {
-          const d = currentEventData;
-          const myCourtIdx = (d.courts || []).find(c => c.players.includes(currentPlayerName))?.courtIndex ?? -1;
-          let selectedIdx = myCourtIdx >= 0 ? myCourtIdx : (d.courts[0]?.courtIndex ?? 0);
-          if (playerViewCourtOverride !== null && (d.courts || []).some(c => c.courtIndex === playerViewCourtOverride)) {
-            selectedIdx = playerViewCourtOverride;
-          }
-          html += `<div class="hamburger-section-label" style="margin-top:16px;">Pelikenttä</div>`;
-          html += `<select id="hamburgerCourtSelector">`;
-          (d.courts || []).forEach(c => {
-            const isMine = c.courtIndex === myCourtIdx;
-            const sizeLabel = c.players.length === 5 ? ' · 5p' : '';
-            html += `<option value="${c.courtIndex}" ${c.courtIndex === selectedIdx ? 'selected' : ''}>K${c.courtNumber}${isMine ? ' (oma)' : ''}${sizeLabel}</option>`;
-          });
-          html += `</select>`;
-        }
         html += `<div class="hamburger-section-label" style="margin-top:16px;">Jakaminen</div>`;
-        html += `<button id="hamburgerShareBtn" class="secondary" type="button">🔗 Jaa pelaajille</button>`;
+        html += `<button id="hamburgerShareBtn" class="secondary" type="button">🔗 Jaa pelaajille linkki + koodi</button>`;
+        if (currentRole === 'player' && currentPlayerName) {
+          html += `<div style="margin-top:16px; padding:10px; background:var(--surface-2); border-radius:8px; font-size:0.85rem;">`;
+          html += `<div style="font-weight:700;margin-bottom:4px;">Olet: ${currentPlayerName}</div>`;
+          html += `<button id="hamburgerChangeIdentity" class="secondary small" type="button" style="width:100%;">Vaihda nimi</button>`;
+          html += `</div>`;
+        }
       }
 
       html += `<div class="hamburger-section-label" style="margin-top:${html ? '16px' : '0'};">Asetukset</div>`;
@@ -2131,14 +2243,10 @@
         $('hamburgerNavStandings').onclick = () => { closeModal('hamburgerModal'); switchTab('standings'); };
         $('hamburgerNavHistory').onclick = () => { closeModal('hamburgerModal'); switchTab('history'); };
         if ($('hamburgerNavAdmin')) $('hamburgerNavAdmin').onclick = () => { closeModal('hamburgerModal'); switchTab('admin'); };
-        if ($('hamburgerCourtSelector')) {
-          $('hamburgerCourtSelector').onchange = (e) => {
-            playerViewCourtOverride = parseInt(e.target.value);
-            closeModal('hamburgerModal');
-            switchTab('players');
-          };
-        }
         $('hamburgerShareBtn').onclick = () => { closeModal('hamburgerModal'); openShareModal(); };
+        if ($('hamburgerChangeIdentity')) {
+          $('hamburgerChangeIdentity').onclick = () => { closeModal('hamburgerModal'); askIdentify(); };
+        }
       }
 
       $('hamburgerSettingsBtn').onclick = () => { closeModal('hamburgerModal'); openSettings(); };
@@ -2178,6 +2286,7 @@
       try {
         const { playerCode, organizerCode } = await createEvent(name, names, selfName);
         currentEventId = playerCode; currentRole = 'organizer'; currentPlayerName = selfName;
+        collapsedPlayerCourts = null;
         upsertRecentEvent({ id: playerCode, name, role: 'organizer', myPlayerName: selfName, playerCount: names.length });
         history.replaceState({}, '', window.location.pathname + '?event=' + playerCode);
         hideLoading();
@@ -2248,7 +2357,9 @@
         } else if (currentView === 'view-event') {
           if (unsubscribeEvent) { unsubscribeEvent(); unsubscribeEvent = null; }
           currentEventId = null; currentEventData = null; currentRole = null; currentPlayerName = null;
-          playerViewCourtOverride = null;
+          collapsedPlayerCourts = null;
+          lastCollapseStateCycle = -1;
+          lastCollapseStatePlayer = null;
           history.replaceState({}, '', window.location.pathname);
           showView('view-home'); renderRecentEvents();
         } else {
@@ -2311,6 +2422,8 @@
         err.classList.add('hidden');
         if (!val) { err.textContent = 'Valitse nimesi.'; err.classList.remove('hidden'); return; }
         currentPlayerName = val;
+        collapsedPlayerCourts = null;
+        lastCollapseStatePlayer = null;
         const entry = getEventEntry(currentEventId);
         if (entry) upsertRecentEvent({ ...entry, myPlayerName: currentPlayerName });
         closeModal('identifyModal');
@@ -2318,6 +2431,8 @@
       };
       $('btnIdentifySkip').onclick = () => {
         currentPlayerName = null;
+        collapsedPlayerCourts = null;
+        lastCollapseStatePlayer = null;
         closeModal('identifyModal');
         renderEventView();
       };
@@ -2400,7 +2515,6 @@
     }
 
     async function main() {
-      // Auth on pakollinen uusien sääntöjen kanssa
       let authOk = false;
       for (let attempt = 0; attempt < 3; attempt++) {
         try { await ensureAuth(); authOk = true; break; }
@@ -2417,6 +2531,19 @@
           '</div>';
         return;
       }
+
+      // Diagnostiikka: tarkistetaan App Check -token taustalla (ei estä käynnistystä)
+      setTimeout(async () => {
+        try {
+          if (appCheck && typeof appCheck.getToken === 'function') {
+            await appCheck.getToken(false);
+            console.log('✅ App Check OK');
+          }
+        } catch(e) {
+          console.error('⚠️ App Check token failed:', e);
+        }
+      }, 2000);
+
       try {
         const raw = safeGet('APP_ui_scale', '0');
         const num = parseFloat(raw);
