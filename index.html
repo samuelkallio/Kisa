@@ -1,9 +1,9 @@
 <!--
   3 Erää - Turnausjärjestelmä
-  Versio: 1.8.1
-  Muutokset: Firebase-turvasääntöjen tuki – anonyymi kirjautuminen pakollinen,
-             withAuthRetry automaattisella uudelleenkirjautumisella,
-             selkeä virheilmoitus jos auth epäonnistuu, listenEvent-virheenkäsittely.
+  Versio: 1.9.0
+  Muutokset: Firebase App Check (reCAPTCHA v3) käyttöönotettu.
+             App Check alustetaan ennen authia ja Firebase-palveluita.
+             Debug-token tuki localhost-kehitykseen.
 -->
 <!DOCTYPE html>
 <html lang="fi">
@@ -635,6 +635,7 @@
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
     import { getDatabase, ref, set, get, onValue, update, remove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
     import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+    import { initializeAppCheck, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app-check.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyCh1kTTHGf5cgwT1ybPsTFE8LUniaKjkU8",
@@ -646,11 +647,28 @@
       appId: "1:305285451356:web:1073e301fca718d273a099"
     };
 
+    // ============================================================
+    // APP CHECK – KORVAA TÄMÄ OMAVALLA reCAPTCHA v3 -SITE KEYLLÄ
+    // ============================================================
+    const RECAPTCHA_SITE_KEY = 'KORVAA-TAMA-reCAPTCHA-v3-site-key';
+
     const app = initializeApp(firebaseConfig);
+
+    // Debug-token localhost-kehitykseen (poista tai jätä ennalleen tuotannossa)
+    if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+      self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;
+    }
+
+    // App Check on alustettava ennen kuin mitään Firebase-palvelua käytetään
+    const appCheck = initializeAppCheck(app, {
+      provider: new ReCaptchaV3Provider(RECAPTCHA_SITE_KEY),
+      isTokenAutoRefreshEnabled: true
+    });
+
     const db = getDatabase(app);
     const auth = getAuth(app);
     const $ = id => document.getElementById(id);
-    const APP_VERSION = '1.8.1';
+    const APP_VERSION = '1.9.0';
     const MAX_POINT_DIFF = 5;
     const ID_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
@@ -757,7 +775,6 @@
       await signInAnonymously(auth);
     }
 
-    // Suorittaa fn():n; permission-virheessä yrittää uudelleenkirjautumista ja toistaa kerran.
     async function withAuthRetry(fn) {
       try {
         return await fn();
