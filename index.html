@@ -1,7 +1,11 @@
 <!DOCTYPE html>
 <!--
   3 Erää - Turnausjärjestelmä
-  Versio: 2.1.0
+  Versio: 3.0.0
+
+  v3.0: Uusi pisteytys: tasapelit sallittu (½ voittoa), nousijat ja putoajat ratkaistaan koko tapahtuman
+        luokituksella (huomioi parit ja vastustajat), alkujärjestys kevyenä lähtötietona, reaaliaikainen
+        sijoitus- ja TV-näkymä ennustetuin siirroin.
 
   v2.1: Käyttöliittymän modernisointi (mobiili ensin): alanavigaatio, pelaajan "Oma kenttä"
         -näkymä, pistesyöttö +/- -painikkeilla ja kiinteällä tallennuspainikkeella, kumoa-toast,
@@ -146,6 +150,8 @@
 
     .event-header { background: var(--surface); padding: 12px 16px; border-radius: 12px; margin-bottom: 12px; box-shadow: var(--shadow); }
     .event-status { font-size: 0.95rem; color: var(--text-muted); }
+    .calc-bar { position: sticky; top: 56px; z-index: 9; padding: 8px 0 4px; background: var(--bg, var(--surface-2)); }
+    .calc-bar button { width: 100%; min-height: 52px; font-size: 1.05rem; font-weight: 800; display:flex; align-items:center; justify-content:center; gap:8px; }
     .event-status strong { color: var(--primary); }
 
     .court-card { background: var(--surface); border-left: 4px solid var(--primary); padding: 12px; border-radius: 8px; margin-bottom: 10px; box-shadow: var(--shadow); }
@@ -157,6 +163,9 @@
     .tag.rest { background: var(--warn-bg); color: var(--warn-fg); border-color: var(--warn-border); }
     .round-row { background: var(--surface-2); padding: 8px 10px; border-radius: 6px; margin: 4px 0; font-size: 0.85rem; color: var(--text); }
     .round-row.done { background: var(--win-bg); border-left: 3px solid var(--win-fg); }
+    .round-row.has-edit { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .round-row.has-edit .rr-text { flex: 1; min-width: 0; }
+    .round-row .edit-btn.icon-only { margin-left: 0 !important; flex: 0 0 auto; width: 40px; height: 40px; min-height: 40px !important; padding: 0 !important; justify-content: center; border-radius: 50%; }
     .round-row.pending { background: var(--warn-bg); border-left: 3px solid var(--warn-border); }
     .round-row.waiting { background: var(--surface-2); border-left: 3px solid var(--border-strong); color: var(--text-muted); }
     .round-row .edit-btn { display: inline-block; margin-left: 8px; padding: 2px 8px; min-height: 24px; font-size: 0.75rem; background: var(--surface); color: var(--primary); border: 1px solid var(--primary); border-radius: 4px; cursor: pointer; font-weight: 600; }
@@ -231,23 +240,23 @@
     .tv-status { font-size: clamp(16px, 2.6vh, 38px); color: #aab1c2; margin-top: 0.3vh; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .tv-status strong { color: #9aa6ff; }
     .tv-qr { flex: 0 0 auto; text-align: center; margin-right: 11vh; }
-    .tv-qr img { display: block; background: #fff; padding: 0.5vh; border-radius: 6px; height: 11vh; width: 11vh; object-fit: contain; }
+    .tv-qr img { display: block; background: #fff; padding: 0.5vh; border-radius: 6px; height: 9.9vh; width: 9.9vh; object-fit: contain; }
     .tv-qr-label { font-size: 1.6vh; color: #aab1c2; margin-top: 0.3vh; }
     .tv-fs { position: absolute; top: 1.2vh; right: 1vw; width: auto; min-height: 0; margin: 0; padding: 0.8vh 1.2vh; font-size: 1.8vh; background: #1f232e; color: #fff; border: 1px solid #3a4050; border-radius: 8px; opacity: 0.9; z-index: 6; }
     .tv-fs .ic { width: 2.4vh; height: 2.4vh; }
     body.tv-idle .tv-fs { opacity: 0; pointer-events: none; }
-    .tv-main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 1.4vw; }
+    .tv-main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.4fr); gap: 1.2vw; }
     .tv-col { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 1vh; }
     .tv-section-title { flex: 0 0 auto; font-size: clamp(14px, 2.2vh, 32px); font-weight: 800; color: #9aa6ff; text-transform: uppercase; letter-spacing: 0.08em; display: flex; justify-content: space-between; }
     .tv-grid { flex: 1; min-height: 0; display: grid; gap: 1vh; grid-auto-rows: minmax(0, 1fr); }
-    .tv-court { background: #171a22; border-radius: 1.2vh; padding: 1vh 0.9vw; border-left: 0.6vh solid #7d8bff; min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 0.5vh; }
+    .tv-court { background: #171a22; border-radius: 1.2vh; padding: 0.8vh 0.5vw; border-left: 0.6vh solid #7d8bff; min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 0.5vh; }
     .tv-court.rest { border-left-color: #fbd38d; }
     .tv-court-title { font-size: clamp(14px, 2.4vh, 34px); font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .tv-round { padding: 0.4vh 0.6vw; background: #1f232e; border-radius: 0.8vh; min-width: 0; }
     .tv-round.done { background: #16351f; }
     .tv-round.pending { background: #2a2410; outline: 0.25vh solid #ffd27a; }
     .tv-round-label { font-size: clamp(11px, 1.5vh, 22px); color: #aab1c2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .tv-team { display: flex; justify-content: space-between; gap: 0.6vw; font-size: clamp(14px, 2.1vh, 32px); line-height: 1.25; }
+    .tv-team { display: flex; justify-content: space-between; gap: 0.4vw; font-size: clamp(13px, 1.9vh, 30px); line-height: 1.25; }
     .tv-team span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .tv-team .sc { font-weight: 800; font-variant-numeric: tabular-nums; }
     .tv-team.win { color: #7ee2a0; font-weight: 700; }
@@ -257,13 +266,21 @@
     .tv-table th { text-align: left; color: #aab1c2; padding: 0.3vh 0.3vw; border-bottom: 1px solid #2a2f3c; font-size: clamp(11px, 1.5vh, 20px); font-weight: 700; text-transform: uppercase; white-space: nowrap; }
     .tv-table th:first-child { width: 1.6em; }
     .tv-table th.tv-num { width: 3.6em; text-align: right; }
+    .tv-table th:nth-child(3) { width: 5.2em; }
+    .tv-table th:nth-child(4) { width: 4em; }
+    .tv-table td.tv-num { padding-right: 0.5vw; }
     .tv-table th.tv-prog { width: 5.2em; text-align: center; }
-    .tv-table td { padding: 0.3vh 0.3vw; border-bottom: 1px solid #2a2f3c; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tv-table td { padding: 0.3vh 0.3vw; border-bottom: 1px solid #2a2f3c; color: #fff; white-space: nowrap; overflow: visible; }
+    .tv-table td:nth-child(2) { overflow: visible; }
     .tv-table tr.top { background: #1e2440; font-weight: 700; }
     .tv-num { text-align: right; font-variant-numeric: tabular-nums; }
     .tv-prog { font-family: ui-monospace, monospace; color: #aab1c2; text-align: center; }
     .tv-prog .sep { color: #4a5568; }
     .tv-up { color: #7ee2a0; font-weight: 700; }
+    .tv-table th.tv-mv { width: 3.8em; text-align: center; }
+    .tv-table th.tv-rest { width: 2.2em; text-align: center; }
+    .tv-rest { text-align: center; color: #f5c46b; font-variant-numeric: tabular-nums; }
+    .tv-mv { text-align: center; white-space: nowrap; }
     .tv-down { color: #ff8a8a; font-weight: 700; }
     .tv-same { color: #aab1c2; }
     .tv-flash { position: absolute; left: 50%; bottom: 3vh; transform: translate(-50%, 20px); background: #4a5df9; color: #fff; font-size: 3vh; font-weight: 800; padding: 1.4vh 2.4vw; border-radius: 1.6vh; box-shadow: 0 1vh 4vh rgba(0,0,0,0.6); opacity: 0; transition: opacity 0.3s, transform 0.3s; z-index: 7; max-width: 90vw; text-align: center; pointer-events: none; }
@@ -334,6 +351,26 @@
     .chip { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.72rem; font-weight: 800; }
     .chip.win { background: var(--win-bg); color: var(--win-fg); }
     .chip.loss { background: var(--warn-bg); color: var(--warn-fg); }
+    .chip.tie { background: var(--surface-2); color: var(--text-muted); }
+    .inline-error.hint { color: var(--text-muted); font-weight: 600; }
+    .live-dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:#22c55e; margin-right:6px; animation: livepulse 1.6s infinite; }
+    @keyframes livepulse { 0%,100% { opacity:1 } 50% { opacity:.35 } }
+    .rate-cell { font-variant-numeric: tabular-nums; }
+    .standings-table td, .standings-table th { white-space: nowrap; }
+    .standings-table td:nth-child(2) { white-space: normal; }
+    .mv-up { color: var(--win-fg); font-weight:800; white-space:nowrap; }
+    .mv-down { color: var(--danger); font-weight:800; white-space:nowrap; }
+    .mv-stay { color: var(--text-muted); white-space:nowrap; }
+    .overall-row { display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:10px; background:var(--surface-2); margin:4px 0; }
+    .overall-row.me { outline:2px solid var(--primary, #4a5df9); }
+    .overall-row .pos { width:1.8em; font-weight:800; text-align:right; }
+    .overall-row .nm { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:700; }
+    .rate-cell-wrap { display:flex; flex-direction:column; align-items:flex-end; line-height:1.15; }
+    .seed-rate { color: var(--text-muted); font-size: 0.7rem; white-space: nowrap; }
+    .overall-row { flex-wrap: wrap; }
+    .overall-row .sub2 { order: 3; flex-basis: 100%; padding-left: 2.8em; margin-top: -4px; white-space: normal !important;
+    }
+    .overall-row .sub2-x { color:var(--text-muted); font-size:0.8rem; white-space:nowrap; }
     .chip.rest { background: var(--surface); border: 1px solid var(--border-strong); color: var(--text-muted); }
     .round-row .edit-btn { display: inline-flex; align-items: center; min-height: 36px; padding: 4px 12px; margin-left: 6px; }
 
@@ -417,8 +454,9 @@
         <h2>Luo uusi tapahtuma</h2>
         <label>Tapahtuman nimi</label>
         <input id="inputEventName" type="text" placeholder="Esim. Kisa 12.5." maxlength="60">
-        <label>Pelaajien nimet (taitotason mukaan ylhäältä alas)</label>
+        <label>Pelaajien nimet – vahvin ylimmäisenä, heikoin alimmaisena</label>
         <textarea id="inputPlayerNames" rows="10" placeholder="Matti&#10;Pekka&#10;Juha&#10;Mikko&#10;Kimmo&#10;Sari&#10;Tomi&#10;Eero"></textarea>
+        <label class="check-line" style="display:flex;gap:10px;align-items:flex-start;font-weight:600;"><input type="checkbox" id="inputUseSeed" checked style="width:auto;margin-top:4px;"><span>Käytä listan järjestystä luokituksen lähtötietona<br><span class="muted" style="font-weight:400;font-size:0.85rem;">Mitä paremmin lista vastaa todellista paremmuutta, sitä oikeudenmukaisemmin kentät ja sijoitukset muodostuvat. Pelitulokset korjaavat virheet kierros kierrokselta.</span></span></label>
         <label>Kuka näistä olet sinä?</label>
         <select id="inputSelfName"><option value="">-- Valitse nimesi --</option></select>
         <div class="info-box">Kentät muodostetaan automaattisesti. 5 pelaajan kentät ovat alimpina ensimmäisellä kierroksella. Sallitut pelaajamäärät: 4, 5, 8, 9, 10 tai vähintään 12 pelaajaa.</div>
@@ -429,6 +467,7 @@
     </div>
 
     <div id="view-event" class="hidden">
+      <div id="calcBar" class="calc-bar hidden"><button id="btnTopCalc" type="button"></button></div>
       <div class="event-header">
         <div class="event-status" id="eventStatusDisplay"></div>
         <div class="progress" aria-hidden="true"><span id="eventProgressBar" style="width:0%"></span></div>
@@ -483,7 +522,7 @@
           <div class="tv-grid" id="tvCourts"></div>
         </section>
         <section class="tv-col">
-          <div class="tv-section-title"><span id="tvRightTitle">Sijoitukset – koko tapahtuma</span></div>
+          <div class="tv-section-title"><span id="tvRightTitle">Sijoitus</span></div>
           <div class="tv-grid" id="tvStandings"></div>
         </section>
       </div>
@@ -637,7 +676,7 @@
     };
 
     const $ = id => document.getElementById(id);
-    const APP_VERSION = '2.1.0';
+    const APP_VERSION = '3.0.0';
     const OP_TIMEOUT_MS = 12000;
     const URL_PARAMS = new URLSearchParams(window.location.search);
     const LOCAL_MODE = URL_PARAMS.get('local') === '1' ||
@@ -928,117 +967,192 @@
       return { courts: newCourts, restCounts, lastRestCycle };
     }
 
-    // ---------- Tilastot ----------
-    function calculateRoundBinaryWeights(courts, results, rIdx) {
-      const diffs = [];
-      courts.forEach(c => {
-        const res = results?.[c.courtIndex];
-        if (res) diffs.push(Math.min(MAX_POINT_DIFF, Math.abs(res.team1Score - res.team2Score)));
-      });
-      const unique = [...new Set(diffs)].sort((a, b) => b - a);
-      const wm = new Map();
-      if (unique.length >= 3) { wm.set(unique[0], 4); wm.set(unique[1], 2); wm.set(unique[2], 1); unique.slice(3).forEach(d => wm.set(d, 1)); }
-      else if (unique.length === 2) { wm.set(unique[0], 4); wm.set(unique[1], 2); }
-      else if (unique.length === 1) { wm.set(unique[0], 4); }
-      const pb = {};
-      courts.forEach(c => {
-        const res = results?.[c.courtIndex];
-        if (!res) return;
-        const pair = getRoundPairing(c, rIdx);
-        if (!pair) return;
-        const cd = Math.min(MAX_POINT_DIFF, Math.abs(res.team1Score - res.team2Score));
-        const w = wm.get(cd) || 1;
-        const t1w = res.team1Score > res.team2Score;
-        pair.team1.forEach(p => { if (!pb[p]) pb[p] = { ww: 0, tw: 0 }; pb[p].tw += w; if (t1w) pb[p].ww += w; });
-        pair.team2.forEach(p => { if (!pb[p]) pb[p] = { ww: 0, tw: 0 }; pb[p].tw += w; if (!t1w) pb[p].ww += w; });
-      });
-      const out = {};
-      for (const p in pb) out[p] = pb[p].tw > 0 ? pb[p].ww / pb[p].tw : 0;
-      return out;
+    // ---------- Tilastot ja luokitus ----------
+    // Luokitus on koko tapahtuman pelitulosten pienimmän neliösumman/logistinen malli: jokaisella pelaajalla on taso,
+    // pelin odotettu pistesuhde riippuu joukkueiden tasojen erotuksesta. Tasapeli = pistesuhde 0,5. Huomioi parit ja vastustajat.
+    const RATING_K = 0.35, RATING_ITERS = 300, RATING_STEP = 0.8, RATING_LAMBDA = 0.02;
+    const SEED_PRIOR_C = 0.5, SEED_PRIOR_LAMBDA = 0.5;
+
+    function qnormApprox(p) {
+      const a = [-39.69683028665376, 220.9460984245205, -275.9285104469687, 138.357751867269, -30.66479806614716, 2.506628277459239];
+      const b = [-54.47609879822406, 161.5858368580409, -155.6989798598866, 66.80131188771972, -13.28068155288572];
+      const c = [-0.007784894002430293, -0.3223964580411365, -2.400758277161838, -2.549732539343734, 4.374664141464968, 2.938163982698783];
+      const d = [0.007784695709041462, 0.3224671290700398, 2.445134137142996, 3.754408661907416];
+      const pl = 0.02425;
+      if (p < pl) { const q = Math.sqrt(-2 * Math.log(p)); return (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1); }
+      if (p > 1 - pl) { const q = Math.sqrt(-2 * Math.log(1 - p)); return -(((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1); }
+      const q = p - 0.5, r = q * q;
+      return (((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5]) * q / (((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + 1);
     }
 
-    function computeStandings(eventData) {
-      const { courts, rounds, playerNames } = eventData;
-      const stats = {};
-      playerNames.forEach(p => { stats[p] = { wins: 0, played: 0, pointDiffSum: 0 }; });
-      (rounds || []).forEach((round, rIdx) => {
-        (courts || []).forEach(court => {
-          const res = round?.results?.[court.courtIndex];
-          if (!res) return;
-          const pair = getRoundPairing(court, rIdx);
-          if (!pair) return;
-          const t1w = res.team1Score > res.team2Score;
-          const diff = capDiff(res.team1Score - res.team2Score);
-          pair.team1.forEach(p => { if (!stats[p]) stats[p] = { wins: 0, played: 0, pointDiffSum: 0 }; stats[p].played++; if (t1w) stats[p].wins++; stats[p].pointDiffSum += diff; });
-          pair.team2.forEach(p => { if (!stats[p]) stats[p] = { wins: 0, played: 0, pointDiffSum: 0 }; stats[p].played++; if (!t1w) stats[p].wins++; stats[p].pointDiffSum += -diff; });
-        });
-      });
-      const bVals = {};
-      playerNames.forEach(p => { bVals[p] = []; });
-      (rounds || []).forEach((round, rIdx) => {
-        const rb = calculateRoundBinaryWeights(courts, round?.results || {}, rIdx);
-        for (const p in rb) if (bVals[p]) bVals[p].push(rb[p]);
-      });
-      const st = playerNames.map(p => {
-        const s = stats[p] || { wins: 0, played: 0, pointDiffSum: 0 };
-        const wr = s.played > 0 ? s.wins / s.played : 0;
-        const apd = s.played > 0 ? s.pointDiffSum / s.played : 0;
-        const ba = bVals[p].length > 0 ? bVals[p].reduce((a, b) => a + b, 0) / bVals[p].length : 0;
-        return { name: p, winRate: wr, avgPointDiff: apd, bAvg: ba, wins: s.wins, played: s.played, pointDiffSum: s.pointDiffSum };
-      });
-      st.sort((a, b) => {
-        if (Math.abs(b.winRate - a.winRate) > 1e-9) return b.winRate - a.winRate;
-        if (Math.abs(b.avgPointDiff - a.avgPointDiff) > 1e-9) return b.avgPointDiff - a.avgPointDiff;
-        return b.bAvg - a.bAvg;
-      });
-      return st;
+    // Alkujärjestys (vahvin ensin) kevyeksi lähtöarvoksi luokitukselle
+    function seedPriorOf(eventData) {
+      const order = eventData && eventData.seedOrder;
+      if (!Array.isArray(order) || order.length < 2 || (eventData && eventData.useSeedPrior === false)) return null;
+      const n = order.length, pr = {};
+      order.forEach((p, i) => { pr[p] = SEED_PRIOR_C * qnormApprox(1 - (i + 0.5) / n); });
+      return pr;
     }
 
-    function computeEventStandingsByCourt(eventData, upToEräIdx) {
-      const { courts, rounds, playerNames, previousCycles } = eventData;
-      const stats = {};
-      (playerNames || []).forEach(p => { stats[p] = { wins: 0, played: 0, pointDiffSum: 0 }; });
-      const accumulate = (cycCourts, cycRounds, maxRoundIdx) => {
-        (cycRounds || []).forEach((round, rIdx) => {
-          if (maxRoundIdx !== undefined && rIdx > maxRoundIdx) return;
-          (cycCourts || []).forEach(court => {
-            const res = round?.results?.[court.courtIndex];
-            if (!res) return;
+    // Kaikki pelatut pelit: aiemmat kierrokset + käynnissä oleva (valinnaisesti vain erään maxRound asti)
+    function collectGames(eventData, opts = {}) {
+      const g = [];
+      const add = (courts, rounds, maxRound, cycle) => {
+        (rounds || []).forEach((round, rIdx) => {
+          if (maxRound !== undefined && rIdx > maxRound) return;
+          (courts || []).forEach(court => {
+            const res = round && round.results && round.results[court.courtIndex];
             const pair = getRoundPairing(court, rIdx);
-            if (!pair) return;
-            const t1w = res.team1Score > res.team2Score;
-            const diff = capDiff(res.team1Score - res.team2Score);
-            pair.team1.forEach(p => { if (!stats[p]) return; stats[p].played++; if (t1w) stats[p].wins++; stats[p].pointDiffSum += diff; });
-            pair.team2.forEach(p => { if (!stats[p]) return; stats[p].played++; if (!t1w) stats[p].wins++; stats[p].pointDiffSum += -diff; });
+            if (!res || !pair) return;
+            g.push({ t1: pair.team1 || [], t2: pair.team2 || [], a: Number(res.team1Score), b: Number(res.team2Score), cycle });
           });
         });
       };
-      (previousCycles || []).forEach(cycle => accumulate(cycle.courts, cycle.rounds));
-      accumulate(courts, rounds, upToEräIdx);
-      const courtOf = {};
-      (courts || []).forEach(c => (c.players || []).forEach(p => { courtOf[p] = c.courtNumber; }));
-      const byCourt = {};
-      (playerNames || []).forEach(p => {
-        const s = stats[p] || { wins: 0, played: 0, pointDiffSum: 0 };
-        const wr = s.played > 0 ? s.wins / s.played : 0;
-        const apd = s.played > 0 ? s.pointDiffSum / s.played : 0;
-        const cNum = courtOf[p] || 999;
-        if (!byCourt[cNum]) byCourt[cNum] = [];
-        byCourt[cNum].push({ name: p, court: cNum, wins: s.wins, played: s.played, winRate: wr, avgPointDiff: apd });
-      });
-      Object.keys(byCourt).forEach(k => {
-        byCourt[k].sort((a, b) => {
-          if (Math.abs(b.winRate - a.winRate) > 1e-9) return b.winRate - a.winRate;
-          return b.avgPointDiff - a.avgPointDiff;
+      if (!opts.currentOnly) (eventData.previousCycles || []).forEach((c, i) => add(c.courts, c.rounds, undefined, i));
+      add(eventData.courts, eventData.rounds, opts.maxRound, (eventData.previousCycles || []).length);
+      return g;
+    }
+
+    function computeRatings(eventData, opts = {}) {
+      const games = collectGames(eventData, opts);
+      const names = new Set(eventData.playerNames || []);
+      games.forEach(x => { x.t1.concat(x.t2).forEach(p => names.add(p)); });
+      const prior = opts.noPrior ? null : seedPriorOf(eventData);
+      const r = {}, pr = {};
+      names.forEach(p => { pr[p] = prior && prior[p] !== undefined ? prior[p] : 0; r[p] = pr[p]; });
+      if (!games.length) return r;
+      const lam = prior ? SEED_PRIOR_LAMBDA : RATING_LAMBDA;
+      for (let it = 0; it < RATING_ITERS; it++) {
+        const gr = {};
+        names.forEach(p => { gr[p] = -lam * (r[p] - pr[p]); });
+        games.forEach(x => {
+          const dd = x.t1.reduce((q, p) => q + (r[p] || 0), 0) - x.t2.reduce((q, p) => q + (r[p] || 0), 0);
+          const tot = x.a + x.b;
+          const y = tot > 0 ? x.a / tot : 0.5;
+          const e = 1 / (1 + Math.exp(-RATING_K * dd));
+          const er = y - e;
+          x.t1.forEach(p => { gr[p] += er; }); x.t2.forEach(p => { gr[p] -= er; });
         });
+        names.forEach(p => { r[p] += RATING_STEP * gr[p]; });
+      }
+      return r;
+    }
+    function ratingLabel(r) { return Math.round(1000 + 100 * (r || 0)); }
+
+    function gameStats(games, names) {
+      const st = {};
+      names.forEach(p => { st[p] = { wins: 0, ties: 0, losses: 0, played: 0, pf: 0, pa: 0 }; });
+      games.forEach(x => {
+        const w1 = x.a > x.b ? 1 : (x.a === x.b ? 0.5 : 0);
+        const upd = (team, sc, opp, w) => team.forEach(p => {
+          if (!st[p]) st[p] = { wins: 0, ties: 0, losses: 0, played: 0, pf: 0, pa: 0 };
+          const q = st[p]; q.played++; q.pf += sc; q.pa += opp;
+          if (w === 1) q.wins++; else if (w === 0) q.losses++; else q.ties++;
+        });
+        upd(x.t1, x.a, x.b, w1); upd(x.t2, x.b, x.a, 1 - w1);
       });
+      return st;
+    }
+    function statsRow(name, q, rating) {
+      const tot = q.pf + q.pa;
+      return {
+        name, rating, wins: q.wins, ties: q.ties, losses: q.losses, played: q.played,
+        winRate: q.played ? (q.wins + 0.5 * q.ties) / q.played : 0,
+        share: tot > 0 ? q.pf / tot : 0.5,
+        pointsFor: q.pf, pointsAgainst: q.pa,
+        pointDiffSum: q.pf - q.pa,
+        avgPointDiff: q.played ? (q.pf - q.pa) / q.played : 0
+      };
+    }
+    function sortByRating(rows, order) {
+      const idx = {}; (order || []).forEach((p, i) => { idx[p] = i; });
+      rows.sort((a, b) => {
+        if (Math.abs(b.rating - a.rating) > 1e-9) return b.rating - a.rating;
+        if (Math.abs(b.winRate - a.winRate) > 1e-9) return b.winRate - a.winRate;
+        if (Math.abs(b.share - a.share) > 1e-9) return b.share - a.share;
+        return (idx[a.name] ?? 1e9) - (idx[b.name] ?? 1e9);
+      });
+      return rows;
+    }
+
+    // Käynnissä olevan kierroksen tilasto (V/T/H, pistesuhde) + luokitus koko tapahtumasta. Järjestys = luokitus.
+    // Tämän järjestyksen perusteella ratkaistaan kenttäkohtaiset nousijat ja putoajat.
+    function computeStandings(eventData) {
+      const names = Array.from(new Set((eventData.playerNames || []).concat(
+        (eventData.courts || []).flatMap(c => c.players || []))));
+      const rating = computeRatings(eventData);
+      const st = gameStats(collectGames(eventData, { currentOnly: true }), names);
+      const rows = names.map(p => statsRow(p, st[p] || { wins: 0, ties: 0, losses: 0, played: 0, pf: 0, pa: 0 }, rating[p] || 0));
+      return sortByRating(rows, eventData.playerNames);
+    }
+
+    // Koko tapahtuman tilasto kentittäin (live). upToEräIdx: lasketaan vain tämän erän asti (erä-kohtainen kehitys).
+    function computeEventStandingsByCourt(eventData, upToEräIdx) {
+      const names = Array.from(new Set((eventData.playerNames || []).concat(
+        (eventData.courts || []).flatMap(c => c.players || []))));
+      const opts = upToEräIdx !== undefined ? { maxRound: upToEräIdx } : {};
+      const rating = computeRatings(eventData, opts);
+      const st = gameStats(collectGames(eventData, opts), names);
+      const courtOf = {};
+      (eventData.courts || []).forEach(c => (c.players || []).forEach(p => { courtOf[p] = c.courtNumber; }));
+      const byCourt = {};
+      names.forEach(p => {
+        const cNum = courtOf[p] || 999;
+        (byCourt[cNum] = byCourt[cNum] || []).push(Object.assign(
+          statsRow(p, st[p] || { wins: 0, ties: 0, losses: 0, played: 0, pf: 0, pa: 0 }, rating[p] || 0), { court: cNum }));
+      });
+      Object.keys(byCourt).forEach(k => sortByRating(byCourt[k], eventData.playerNames));
       return byCourt;
     }
 
-    function hasAnyEräResults(eventData, eräIdx) {
-      const round = eventData?.rounds?.[eräIdx];
-      if (!round?.results) return false;
-      return Object.keys(round.results).length > 0;
+    // Koko tapahtuman yleisluokitus (kaikki pelaajat, paras ensin)
+    function computeOverallStandings(eventData) {
+      const names = Array.from(new Set((eventData.playerNames || []).concat(
+        (eventData.courts || []).flatMap(c => c.players || []))));
+      const rating = computeRatings(eventData);
+      const st = gameStats(collectGames(eventData), names);
+      const courtOf = {};
+      (eventData.courts || []).forEach(c => (c.players || []).forEach(p => { courtOf[p] = c.courtNumber; }));
+      const rows = names.map(p => Object.assign(statsRow(p, st[p], rating[p] || 0), { court: courtOf[p] || null }));
+      return sortByRating(rows, eventData.playerNames);
+    }
+
+    // Ennustettu siirto: nimi -> kenttänumero seuraavalla kierroksella (null jos ei vielä tuloksia)
+    function projectedCourtMap(eventData) {
+      if (!eventData || !eventData.courts || !eventData.courts.length) return null;
+      const any = (eventData.rounds || []).some(r => r && r.results && Object.keys(r.results).length > 0);
+      if (!any) return null;
+      try {
+        const { courts } = computeNextCycle(eventData);
+        const m = {};
+        courts.forEach(c => c.players.forEach(p => { m[p] = c.courtNumber; }));
+        return m;
+      } catch (e) { return null; }
+    }
+
+    // Pelaajan taukojen lukumäärä: päättyneet kierrokset + käynnissä olevan kierroksen jo pelatut erät
+    function computeRestCountsLive(eventData) {
+      const rc = {};
+      (eventData.previousCycles || []).forEach(c => (c.courts || []).forEach(court => (court.rounds || []).forEach(r => {
+        if (r && r.resting) rc[r.resting] = (rc[r.resting] || 0) + 1;
+      })));
+      (eventData.courts || []).forEach(court => (court.rounds || []).forEach((r, rIdx) => {
+        if (r && r.resting && eventData.rounds && eventData.rounds[rIdx] && eventData.rounds[rIdx].results && eventData.rounds[rIdx].results[court.courtIndex]) rc[r.resting] = (rc[r.resting] || 0) + 1;
+      }));
+      return rc;
+    }
+    // Alkuperäinen (tapahtuman alussa määritelty) taso: alkujärjestyksestä, vaikka lähtötieto ei olisi käytössä luokituksessa
+    function seedRatingMap(eventData) {
+      const order = eventData && eventData.seedOrder;
+      const m = {};
+      if (!Array.isArray(order) || order.length < 2) return m;
+      order.forEach((p, i) => { m[p] = SEED_PRIOR_C * qnormApprox(1 - (i + 0.5) / order.length); });
+      return m;
+    }
+
+    function recordStr(s) {
+      if (s.ties === undefined && s.losses === undefined) return `${s.wins}/${s.played}`;
+      return `${s.wins}–${s.ties || 0}–${s.losses || 0}`;
     }
 
     function computePlacementProgression(eventData) {
@@ -1054,6 +1168,12 @@
         });
       }
       return result;
+    }
+
+    function hasAnyEräResults(eventData, eräIdx) {
+      const round = eventData?.rounds?.[eräIdx];
+      if (!round?.results) return false;
+      return Object.keys(round.results).length > 0;
     }
 
     function isCycleComplete(eventData) {
@@ -1092,6 +1212,10 @@
       const LOCAL_UID = 'local-user';
       const listeners = new Set();
       const BAD_KEY = /[.$#\[\]\/]/;
+      // Serialisoi luku-muokkaus-kirjoitus -kierrokset välilehtien välillä (kuten Firebasen atomiset kirjoitukset)
+      const withLock = (fn) => (typeof navigator !== 'undefined' && navigator.locks && window.isSecureContext)
+        ? navigator.locks.request('APPL_localdb_lock', async () => fn())
+        : Promise.resolve().then(fn);
       const delay = () => LOCAL_LATENCY > 0 ? new Promise(r => setTimeout(r, LOCAL_LATENCY)) : null;
 
       function readDb() { try { const r = localStorage.getItem(KEY); return r ? JSON.parse(r) : {}; } catch (e) { return {}; } }
@@ -1160,21 +1284,27 @@
         async get(path) { const w = delay(); if (w) await w; return JSON.parse(JSON.stringify(readNorm(path))); },
         async set(path, val) {
           const w = delay(); if (w) await w;
-          const nd = setIn(readDb(), parts(path), clean(val));
-          writeDb(nd || {}); notify();
+          return withLock(() => {
+            const nd = setIn(readDb(), parts(path), clean(val));
+            writeDb(nd || {}); notify();
+          });
         },
         async update(path, obj) {
           const w = delay(); if (w) await w;
-          let db = readDb();
-          for (const [k, v] of Object.entries(obj)) {
-            db = setIn(db, [...parts(path), ...parts(k)], clean(v)) || {};
-          }
-          writeDb(db); notify();
+          return withLock(() => {
+            let db = readDb();
+            for (const [k, v] of Object.entries(obj)) {
+              db = setIn(db, [...parts(path), ...parts(k)], clean(v)) || {};
+            }
+            writeDb(db); notify();
+          });
         },
         async remove(path) {
           const w = delay(); if (w) await w;
-          const nd = setIn(readDb(), parts(path), undefined);
-          writeDb(nd || {}); notify();
+          return withLock(() => {
+            const nd = setIn(readDb(), parts(path), undefined);
+            writeDb(nd || {}); notify();
+          });
         },
         listen(path, cb) {
           const l = { active: true, last: undefined };
@@ -1609,7 +1739,7 @@
     // ============================================================
     // TIETOKANTAOPERAATIOT
     // ============================================================
-    async function createEvent(name, playerNames) {
+    async function createEvent(name, playerNames, opts = {}) {
       const uid = backend.uid() || await backend.ensureAuth();
       let playerCode;
       for (let i = 0; i < 10; i++) {
@@ -1635,6 +1765,7 @@
       const courts = computeInitialCourts(playerNames);
       const eventData = {
         playerCode, name, playerNames, courts,
+        seedOrder: [...playerNames], useSeedPrior: opts.useSeedPrior !== false,
         rounds: [{ roundIndex: 0, results: {} }, { roundIndex: 1, results: {} }, { roundIndex: 2, results: {} }],
         previousCycles: [], restCounts: {}, lastRestCycle: {}, status: 'active', createdAt: new Date().toISOString()
       };
@@ -1933,6 +2064,12 @@
         ? `<strong>Kierros ${cycleNumber} valmis</strong> · ${st.totalEntered}/${st.total} tulosta · ${nameStr}`
         : `<strong>Kierros ${cycleNumber} · Erä ${st.currentRound}/3</strong> · ${st.totalEntered}/${st.total} tulosta · ${nameStr}`;
       $('eventProgressBar').style.width = (st.total ? Math.round(100 * st.totalEntered / st.total) : 0) + '%';
+      const calcBar = $('calcBar');
+      if (calcBar) {
+        const show = currentRole === 'organizer' && st.completed;
+        calcBar.classList.toggle('hidden', !show);
+        if (show) { const bt = $('btnTopCalc'); bt.innerHTML = `${icon('check')}Laske kierros ${cycleNumber} ja näytä siirrot`; bt.onclick = () => showStandings(); }
+      }
       if (activeTab === 'own') renderTabOwn();
       else if (activeTab === 'courts') renderTabPlayers();
       else if (activeTab === 'standings') renderTabStandings();
@@ -1983,7 +2120,7 @@
       const sts = computeStandings(d).filter(s => court.players.includes(s.name));
       const i = sts.findIndex(s => s.name === currentPlayerName);
       if (i < 0) return '';
-      return `Olet kentällä sijalla ${i + 1}/${sts.length} (${sts[i].wins}/${sts[i].played} voittoa).`;
+      return `Olet kentällä sijalla ${i + 1}/${sts.length} (V–T–H ${recordStr(sts[i])}).`;
     }
 
     function ownStatus(d, court, st) {
@@ -2042,11 +2179,11 @@
       }
       const st = computeRoundStatus(d);
       const items = [];
-      const mv = movementBanner(d, st);
-      if (mv) items.push({ key: 'move', sig: JSON.stringify(mv), build: () => bannerNode(mv) });
+      items.push({ key: 'own-' + court.courtIndex, sig: courtSig(court, true, { own: true }), build: () => buildCourtCard(court, true, court.players.length === 5, { own: true }) });
       const stat = ownStatus(d, court, st);
       items.push({ key: 'status', sig: JSON.stringify(stat), build: () => bannerNode(stat) });
-      items.push({ key: 'own-' + court.courtIndex, sig: courtSig(court, true, { own: true }), build: () => buildCourtCard(court, true, court.players.length === 5, { own: true }) });
+      const mv = movementBanner(d, st);
+      if (mv) items.push({ key: 'move', sig: JSON.stringify(mv), build: () => bannerNode(mv) });
       patchList(container, items);
     }
 
@@ -2076,47 +2213,67 @@
       patchList(container, items);
     }
 
+    function moveBadge(courtNum, nc, tv) {
+      if (nc === undefined || nc === null) return tv ? '<span class="tv-same">–</span>' : '<span class="mv-stay">–</span>';
+      const cls = nc < courtNum ? 'up' : (nc > courtNum ? 'down' : 'stay');
+      const sym = nc < courtNum ? '▲' : (nc > courtNum ? '▼' : '→');
+      const label = nc < courtNum ? `nousee K${nc}` : (nc > courtNum ? `putoaa K${nc}` : 'pysyy');
+      return tv ? `<span class="tv-${cls === 'stay' ? 'same' : cls}">${sym} ${nc === courtNum ? '' : 'K' + nc}</span>` : `<span class="mv-${cls}">${sym} ${label}</span>`;
+    }
+
     function renderTabStandings() {
       const container = $('tabContentStandings');
       if (!container || !currentEventData) return;
       const d = currentEventData;
+      const st = computeRoundStatus(d);
       const totalCycles = (d.previousCycles || []).length;
       const byCourt = computeEventStandingsByCourt(d);
-      const progression = computePlacementProgression(d);
+      const proj = projectedCourtMap(d);
+      const overall = computeOverallStandings(d);
+      const restLive = computeRestCountsLive(d);
+      const seedR = seedRatingMap(d);
       const courtKeys = Object.keys(byCourt).map(k => parseInt(k)).sort((a, b) => a - b);
 
-      let html = `<div class="card"><h2>Sijoitukset – koko tapahtuma</h2>
-        <p class="sub">${totalCycles} päättynyttä kierrosta${totalCycles === 0 ? ' (1. kierros käynnissä)' : ''}. Erät-sarake näyttää sijoituksen erän 1→2→3 jälkeen.</p>`;
+      let html = `<div class="card"><h2><span class="live-dot"></span>Sijoitukset – live</h2>
+        <p class="sub">Kierros ${totalCycles + 1} · ${st.completed ? 'valmis' : `erä ${st.currentRound}/3`} · ${st.totalEntered}/${st.total} tulosta. Taulukot päivittyvät heti, kun tulos tallennetaan.</p>`;
 
       courtKeys.forEach(courtNum => {
         if (courtNum === 999) return;
         const players = byCourt[courtNum];
         if (!players || players.length === 0) return;
+        const court = (d.courts || []).find(c => c.courtNumber === courtNum);
+        const entered = court ? [0, 1, 2].filter(r => getCourtResult(d, r, court.courtIndex)).length : 0;
         html += `<div style="margin:16px 0;background:var(--surface-2);padding:10px;border-radius:8px;">
-          <div style="font-weight:700;font-size:1rem;margin-bottom:8px;">Kenttä ${courtNum}</div>
+          <div style="font-weight:700;font-size:1rem;margin-bottom:8px;display:flex;justify-content:space-between;"><span>Kenttä ${courtNum}</span><span class="muted" style="font-weight:600;font-size:0.82rem;">${entered}/3 erää</span></div>
           <table class="standings-table">
-            <tr><th>#</th><th>Pelaaja</th><th>Voitot</th><th>Piste-ero ka.</th><th>Erät 1→2→3</th></tr>`;
+            <tr><th>#</th><th>Pelaaja</th><th>V–T–H</th><th>Taso</th><th>Ennuste</th></tr>`;
         players.forEach((s, i) => {
           const isMe = currentPlayerName && s.name === currentPlayerName;
-          const prog = progression[s.name] || [null, null, null];
-          const progStr = prog.map(p => p === null ? '–' : p).join('→');
           html += `<tr class="${isMe ? 'me' : ''}">
             <td>${i + 1}</td>
             <td><strong>${esc(s.name)}</strong></td>
-            <td>${s.wins}/${s.played}</td>
-            <td>${s.avgPointDiff >= 0 ? '+' : ''}${s.avgPointDiff.toFixed(2)}</td>
-            <td class="muted" style="font-family:ui-monospace,monospace;">${progStr}</td>
+            <td>${recordStr(s)}</td>
+            <td class="rate-cell">${ratingLabel(s.rating)}</td>
+            <td>${moveBadge(courtNum, proj ? proj[s.name] : null, false)}</td>
           </tr>`;
         });
         html += `</table></div>`;
       });
-      html += `<div class="info-box" style="margin-top:12px;">Taulukko näyttää koko tapahtuman voitot ja piste-erot. Nousut ja laskut ratkaistaan kuitenkin vain käynnissä olevan kierroksen tuloksista, joten järjestys voi poiketa kierroksen lopun siirroista. Ylemmän kentän pelaajat ovat aina alempaa kenttää korkeammalla.</div>`;
+
+      html += `<h2 style="margin-top:20px;">Yleisluokitus</h2><p class="sub">Kaikki pelaajat paremmuusjärjestyksessä koko tapahtuman tuloksista. Lihavoitu luku on nykyinen taso, pieni luku tapahtuman alussa määritelty taso.</p>`;
+      overall.forEach((s, i) => {
+        const isMe = currentPlayerName && s.name === currentPlayerName;
+        const played = s.played > 0;
+        html += `<div class="overall-row${isMe ? ' me' : ''}"><span class="pos">${i + 1}.</span><span class="nm">${esc(s.name)}</span>
+          <span class="sub2">${s.court ? 'K' + s.court + ' · ' : ''}${played ? recordStr(s) + ' · ' + Math.round(s.share * 100) + ' %' : 'ei pelejä'} · lepo ${restLive[s.name] || 0}</span>
+          <span class="rate-cell-wrap"><strong class="rate-cell">${ratingLabel(s.rating)}</strong>${seedR[s.name] !== undefined ? `<span class="seed-rate" title="Alkuperäinen taso">alku ${ratingLabel(seedR[s.name])}</span>` : ''}</span></div>`;
+      });
+      html += `<div class="info-box" style="margin-top:12px;"><strong>Näin sijoitus lasketaan:</strong> Taso lasketaan kaikista peleistäsi. Se huomioi, kenen kanssa pelasit ja ketä vastaan, ja pelin pistesuhde ratkaisee (tasapeli = ½ voittoa). Kentän ylin pelaaja nousee ja alin putoaa kierroksen lopussa. <strong>Ennuste</strong> päivittyy jokaisen tuloksen jälkeen ja voi vielä muuttua. V–T–H = voitot, tasapelit, häviöt.</div>`;
       html += `</div>`;
       container.innerHTML = html;
     }
 
     async function saveRoundResult(courtIdx, roundIdx, s1, s2, cycleAtRender) {
-      if (s1 === s2) throw new Error('Erässä ei voi olla tasapeliä.');
       if (!LOCAL_MODE && connState === 'off') throw new Error('Ei verkkoyhteyttä – tulosta ei ole tallennettu. Yritä uudelleen, kun yhteys palaa.');
       const liveCycle = (currentEventData?.previousCycles || []).length;
       if (cycleAtRender !== liveCycle) throw new Error('Kierros on vaihtunut. Tulosta ei tallennettu – tarkista uusi kenttäjako.');
@@ -2150,8 +2307,9 @@
       const filled = a !== '' && b !== '';
       lbl.textContent = filled ? `${lbl.dataset.base} ${a}–${b}` : lbl.dataset.base;
       const tie = filled && a === b;
-      err.textContent = tie ? 'Erässä ei voi olla tasapeliä.' : '';
-      if (btn && !btn.dataset.busy) btn.disabled = tie;
+      err.textContent = tie ? 'Tasapeli: kumpikin joukkue saa puoli voittoa.' : '';
+      err.classList.toggle('hint', !!tie);
+      if (btn && !btn.dataset.busy) btn.disabled = false;
     }
 
     function teamBlock(team, mine, k, v) {
@@ -2179,7 +2337,7 @@
       if (own) {
         html += `<div class="own-head"><span class="big">Kenttä ${court.courtNumber}</span>
           <span class="round-dots" role="img" aria-label="Erät ${enteredCount}/3 valmiina">${[0, 1, 2].map(r => `<span class="dot ${results[r] ? 'done' : (r === targetRound ? 'cur' : '')}"></span>`).join('')}</span></div>
-          <div class="own-players">${court.players.map(p => p === currentPlayerName ? `<strong>${esc(p)}</strong>` : esc(p)).join(' · ')}${is5p ? ' · <span class="tag rest">taukovuoro</span>' : ''}</div>`;
+          <div class="own-players">${court.players.map(p => p === currentPlayerName ? `<strong>${esc(p)}</strong>` : esc(p)).join(' · ')}${is5p ? ' · <span class="tag rest">5P</span>' : ''}</div>`;
       } else {
         html += `<div class="court-title" ${collapsible ? 'style="cursor:pointer;user-select:none;"' : ''}>
           <span style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
@@ -2188,7 +2346,7 @@
           </span>
           <span style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;">
             ${isMine ? '<span class="court-badge">SINUN KENTTÄSI</span>' : ''}
-            ${is5p ? '<span class="tag rest">5 PELAAJAA · TAUKOVUORO</span>' : ''}
+            ${is5p ? '<span class="tag rest" title="5 pelaajaa, taukovuoro">5P</span>' : ''}
             ${collapsible && isCollapsed ? `<span class="muted" style="font-size:0.78rem;">${enteredCount}/3 erää</span>` : ''}
           </span>
         </div>`;
@@ -2213,13 +2371,14 @@
           let chip = '';
           if (currentPlayerName && pair.resting === currentPlayerName) chip = '<span class="chip rest">Lepo</span>';
           else if (me1 || me2) {
+            const tieG = res.team1Score === res.team2Score;
             const won = (me1 && res.team1Score > res.team2Score) || (me2 && res.team2Score > res.team1Score);
-            chip = `<span class="chip ${won ? 'win' : 'loss'}">${won ? 'Voitto' : 'Tappio'}</span>`;
+            chip = tieG ? `<span class="chip tie">Tasapeli</span>` : `<span class="chip ${won ? 'win' : 'loss'}">${won ? 'Voitto' : 'Tappio'}</span>`;
           }
-          html += `<div class="round-row done">
-            <strong>Erä ${r + 1}:</strong> ${teamStr(pair.team1)} <strong>${esc(res.team1Score)}–${esc(res.team2Score)}</strong> ${teamStr(pair.team2)} ${chip}
-            ${pair.resting && pair.resting !== currentPlayerName ? `<span class="tag">Lepo: ${esc(pair.resting)}</span>` : ''}
-            <span class="edit-btn" role="button" tabindex="0" data-edit-court="${court.courtIndex}" data-edit-round="${r}">${icon('edit')}Muokkaa</span>
+          html += `<div class="round-row done has-edit">
+            <div class="rr-text"><strong>Erä ${r + 1}:</strong> ${teamStr(pair.team1)} <strong>${esc(res.team1Score)}–${esc(res.team2Score)}</strong> ${teamStr(pair.team2)} ${chip}
+            ${pair.resting && pair.resting !== currentPlayerName ? `<span class="tag">Lepo: ${esc(pair.resting)}</span>` : ''}</div>
+            <span class="edit-btn icon-only" role="button" tabindex="0" aria-label="Muokkaa erän ${r + 1} tulosta" title="Muokkaa" data-edit-court="${court.courtIndex}" data-edit-round="${r}">${icon('edit')}</span>
           </div>`;
         } else if (r === targetRound || isEditing) {
           const v1 = scoreDrafts.has(k1) ? scoreDrafts.get(k1) : (res ? res.team1Score : '');
@@ -2277,7 +2436,6 @@
           const err = entry.querySelector('.inline-error');
           const s1 = parseInt(ins[0].value), s2 = parseInt(ins[1].value);
           if (isNaN(s1) || isNaN(s2) || s1 < 0 || s2 < 0 || s1 > 99 || s2 > 99) { err.textContent = 'Syötä molempien joukkueiden pisteet (0–99).'; return; }
-          if (s1 === s2) { err.textContent = 'Erässä ei voi olla tasapeliä.'; return; }
           err.textContent = '';
           const prev = getCourtResult(currentEventData, r, cIdx);
           const lbl = btn.querySelector('.save-label');
@@ -2308,7 +2466,7 @@
         (d.courts || []).forEach(court => {
           if (getCourtResult(d, r, court.courtIndex)) return;
           const a = Math.floor(Math.random() * 12);
-          let b; do { b = Math.floor(Math.random() * 12); } while (b === a);
+          const b = Math.floor(Math.random() * 12); // tasapelit sallittu
           updates[`rounds/${r}/results/${court.courtIndex}`] = { team1Score: a, team2Score: b, timestamp: new Date().toISOString() };
         });
       }
@@ -2317,8 +2475,8 @@
       catch (e) { notify('Virhe: ' + e.message); }
     }
 
-    async function createAndEnter(name, names, selfName) {
-      const { playerCode, organizerCode } = await createEvent(name, names);
+    async function createAndEnter(name, names, selfName, opts = {}) {
+      const { playerCode, organizerCode } = await createEvent(name, names, opts);
       currentEventId = playerCode; currentRole = 'organizer'; currentPlayerName = selfName; currentOrganizerCode = organizerCode;
       currentEventData = null;
       collapsedPlayerCourts = null;
@@ -2500,7 +2658,7 @@
           html += `<div style="margin-top:8px; font-weight:600; font-size:0.85rem;">Siirrot:</div>`;
           (court.players || []).forEach(p => {
             const s = (cycle.standings || []).find(st => st.name === p);
-            const stats = s ? `${s.wins}/${s.played}v · ${s.avgPointDiff >= 0 ? '+' : ''}${s.avgPointDiff.toFixed(2)}` : '–';
+            const stats = s ? `${recordStr(s)} · taso ${s.rating !== undefined ? ratingLabel(s.rating) : '–'}` : '–';
             const nc = nextCourtOf[p];
             let badge;
             if (nc === undefined) badge = `<span class="muted">–</span>`;
@@ -2544,7 +2702,6 @@
           const s1 = parseInt(sel(1).value);
           const s2 = parseInt(sel(2).value);
           if (isNaN(s1) || isNaN(s2) || s1 < 0 || s2 < 0 || s1 > 99 || s2 > 99) { notify('Syötä molemmat pisteet (0–99).'); return; }
-          if (s1 === s2) { notify('Erässä ei voi olla tasapeliä.'); return; }
           el.disabled = true; el.textContent = '...';
           try {
             const fresh = await loadEvent(currentEventId);
@@ -2556,7 +2713,7 @@
             rounds[rIdx].results[courtIdx] = newRes;
             const cycPlayers = [];
             (pc.courts || []).forEach(c => (c.players || []).forEach(p => cycPlayers.push(p)));
-            const newStandings = computeStandings({ courts: pc.courts, rounds, playerNames: cycPlayers });
+            const newStandings = computeStandings({ courts: pc.courts, rounds, playerNames: cycPlayers, previousCycles: (fresh.previousCycles || []).slice(0, cycIdx), seedOrder: fresh.seedOrder, useSeedPrior: fresh.useSeedPrior });
             // Yksi atominen päivitys: tulos ja sijoitukset
             await withAuthRetry(() => backend.update('events/' + currentEventId, {
               [`previousCycles/${cycIdx}/rounds/${rIdx}/results/${courtIdx}`]: newRes,
@@ -2616,7 +2773,7 @@
             <strong>Kierros ${idx + 1}${isLatest ? ' <span class="tag">uusin</span>' : ''} – K${oldC}</strong>
             <span>${badge}</span>
           </div>
-          <div class="muted" style="font-size:0.82rem;margin-bottom:6px;">${s ? `${s.wins}/${s.played} voittoa · ${s.avgPointDiff >= 0 ? '+' : ''}${s.avgPointDiff.toFixed(2)}` : ''}</div>`;
+          <div class="muted" style="font-size:0.82rem;margin-bottom:6px;">${s ? `V–T–H ${recordStr(s)}${s.rating !== undefined ? ' · taso ' + ratingLabel(s.rating) : ''}` : ''}</div>`;
         (myCourt.rounds || []).forEach((pair, rIdx) => {
           if (pair.resting === currentPlayerName) { html += `<div class="round-row waiting" style="font-size:0.82rem;">Erä ${rIdx + 1}: <em>Lepo</em></div>`; return; }
           const isT1 = pair.team1.includes(currentPlayerName);
@@ -2629,8 +2786,8 @@
           if (res) {
             const ms = isT1 ? res.team1Score : res.team2Score;
             const os = isT1 ? res.team2Score : res.team1Score;
-            const won = ms > os;
-            resultTxt = `<strong style="color:${won ? 'var(--win-fg)' : 'var(--danger)'};">${esc(ms)}–${esc(os)} ${won ? '✓' : '✗'}</strong>`;
+            const won = ms > os, tieG = ms === os;
+            resultTxt = `<strong style="color:${tieG ? 'var(--text-muted)' : (won ? 'var(--win-fg)' : 'var(--danger)')};">${esc(ms)}–${esc(os)} ${tieG ? '＝' : (won ? '✓' : '✗')}</strong>`;
             cls = 'done';
           }
           html += `<div class="round-row ${cls}" style="font-size:0.82rem;"><strong>Erä ${rIdx + 1}:</strong> ${esc(currentPlayerName)}${partner ? ' &amp; ' + esc(partner) : ''} vs ${teamStr(oppTeam)} <span style="margin-left:6px;">${resultTxt}</span></div>`;
@@ -2796,7 +2953,7 @@
         d.courts.forEach(c => c.players.forEach(p => { oldCourtOf[p] = c.courtNumber; }));
         html += `<p class="sub">Tarkista siirrot ja vahvista. Vahvistuksen jälkeen uudet kentät ja erät tulevat kaikkien näkyville.</p>`;
         preview.forEach(c => {
-          html += `<div class="move-card"><div class="move-title"><span>Kenttä ${c.courtNumber}</span>${c.players.length === 5 ? '<span class="tag rest">5 pelaajaa · taukovuoro</span>' : ''}</div>`;
+          html += `<div class="move-card"><div class="move-title"><span>Kenttä ${c.courtNumber}</span>${c.players.length === 5 ? '<span class="tag rest">5P</span>' : ''}</div>`;
           c.players.forEach(p => {
             const o = oldCourtOf[p];
             let badge;
@@ -2809,9 +2966,9 @@
           html += `</div>`;
         });
       } catch (e) { html += `<div class="error">Esikatselu epäonnistui: ${esc(e.message)}</div>`; }
-      html += `<details class="acc"><summary>Kierroksen sijoitukset</summary><div class="acc-body"><table class="standings-table"><tr><th>#</th><th>Pelaaja</th><th>Voitot</th><th>Piste-ero ka.</th><th>B</th></tr>`;
+      html += `<details class="acc"><summary>Pelaajien luokitus (ratkaisee nousut ja laskut)</summary><div class="acc-body"><table class="standings-table"><tr><th>#</th><th>Pelaaja</th><th>V–T–H</th><th>Pisteosuus</th><th>Taso</th></tr>`;
       standings.forEach((s, i) => {
-        html += `<tr><td>${i + 1}</td><td><strong>${esc(s.name)}</strong></td><td>${s.wins}/${s.played}</td><td>${s.avgPointDiff >= 0 ? '+' : ''}${s.avgPointDiff.toFixed(2)}</td><td>${s.bAvg.toFixed(2)}</td></tr>`;
+        html += `<tr><td>${i + 1}</td><td><strong>${esc(s.name)}</strong></td><td>${recordStr(s)}</td><td>${Math.round(s.share * 100)} %</td><td class="rate-cell">${ratingLabel(s.rating)}</td></tr>`;
       });
       html += `</table></div></details>`;
       container.innerHTML = html;
@@ -2885,7 +3042,7 @@
         const qr = qrcode(0, 'M');
         qr.addData(url);
         qr.make();
-        container.innerHTML = `${qr.createImgTag(5, 0)}<div class="tv-qr-label">Liity pelaajana</div>`;
+        container.innerHTML = qr.createImgTag(5, 0);
         tvQrGenerated = true;
       } catch (e) {
         console.warn('TV QR -virhe', e);
@@ -2899,7 +3056,7 @@
       const pair = court && court.rounds && court.rounds[r];
       if (!res || !pair) return;
       const el = $('tvFlash');
-      el.innerHTML = `Kenttä ${court.courtNumber} · erä ${r + 1}: ${teamStr(pair.team1)} <strong>${esc(res.team1Score)}–${esc(res.team2Score)}</strong> ${teamStr(pair.team2)}`;
+      el.innerHTML = `Kenttä ${court.courtNumber} · erä ${r + 1}: ${teamStr(pair.team1)} <strong>${esc(res.team1Score)}–${esc(res.team2Score)}</strong> ${teamStr(pair.team2)}${res.team1Score === res.team2Score ? ' · tasapeli' : ''}`;
       el.classList.add('show');
       clearTimeout(tvFlashTimer);
       tvFlashTimer = setTimeout(() => el.classList.remove('show'), 8000);
@@ -2927,7 +3084,7 @@
       cEl.innerHTML = slice.map(court => {
         const isRest = court.players.length === 5;
         const curRound = [0, 1, 2].find(r => !d.rounds?.[r]?.results?.[court.courtIndex]);
-        let h = `<div class="tv-court${isRest ? ' rest' : ''}"><div class="tv-court-title">Kenttä ${court.courtNumber}${isRest ? ' · taukovuoro' : ''}</div>`;
+        let h = `<div class="tv-court${isRest ? ' rest' : ''}"><div class="tv-court-title">Kenttä ${court.courtNumber}${isRest ? ' · 5P' : ''}</div>`;
         (court.rounds || []).forEach((pair, rIdx) => {
           const res = d.rounds?.[rIdx]?.results?.[court.courtIndex];
           const w1 = res && res.team1Score > res.team2Score, w2 = res && res.team2Score > res.team1Score;
@@ -2942,48 +3099,27 @@
 
       const rEl = $('tvStandings');
       rEl.style.gridTemplateColumns = `repeat(${slice.length <= 1 ? 1 : 2}, minmax(0, 1fr))`;
-      if (st.completed) {
-        $('tvRightTitle').textContent = 'Siirrot seuraavalle kierrokselle';
-        let moves = '';
-        try {
-          const { courts: next } = computeNextCycle(d);
-          const newCourtOf = {};
-          next.forEach(c => c.players.forEach(p => { newCourtOf[p] = c.courtNumber; }));
-          slice.forEach(court => {
-            moves += `<div class="tv-court-standings"><div class="tv-court-standings-title">Kenttä ${court.courtNumber}</div><table class="tv-table"><tbody>`;
-            court.players.forEach(p => {
-              const nc = newCourtOf[p];
-              const cls = nc < court.courtNumber ? 'tv-up' : (nc > court.courtNumber ? 'tv-down' : 'tv-same');
-              const sym = nc < court.courtNumber ? '▲' : (nc > court.courtNumber ? '▼' : '→');
-              moves += `<tr><td>${esc(p)}</td><td class="tv-num ${cls}">${sym} K${nc}</td></tr>`;
-            });
-            moves += `</tbody></table></div>`;
-          });
-        } catch (e) { moves = ''; }
-        rEl.innerHTML = moves;
-      } else {
-        $('tvRightTitle').textContent = 'Sijoitukset – koko tapahtuma';
-        const byCourt = computeEventStandingsByCourt(d);
-        const progression = computePlacementProgression(d);
-        let stHtml = '';
-        slice.forEach(court => {
-          const players = byCourt[court.courtNumber];
-          if (!players || !players.length) return;
-          stHtml += `<div class="tv-court-standings"><div class="tv-court-standings-title">Kenttä ${court.courtNumber}</div>
-            <table class="tv-table"><thead><tr><th>#</th><th>Pelaaja</th><th class="tv-num">V</th><th class="tv-num">Ka</th><th class="tv-prog">Erät</th></tr></thead><tbody>`;
-          players.forEach((s, i) => {
-            const prog = progression[s.name] || [null, null, null];
-            const progCells = prog.map(p => `<span>${p === null ? '–' : p}</span>`).join('<span class="sep">›</span>');
-            stHtml += `<tr class="${i === 0 && players.length > 1 ? 'top' : ''}">
-              <td>${i + 1}</td><td>${esc(s.name)}</td>
-              <td class="tv-num">${s.played > 0 ? `${s.wins}/${s.played}` : '–'}</td>
-              <td class="tv-num">${s.played > 0 ? `${s.avgPointDiff >= 0 ? '+' : ''}${s.avgPointDiff.toFixed(1)}` : '–'}</td>
-              <td class="tv-prog">${progCells}</td></tr>`;
-          });
-          stHtml += `</tbody></table></div>`;
+      $('tvRightTitle').textContent = st.completed ? 'Sijoitus · siirrot' : 'Sijoitus · ennuste';
+      const byCourt = computeEventStandingsByCourt(d);
+      const proj = projectedCourtMap(d);
+      const restLive = computeRestCountsLive(d);
+      let stHtml = '';
+      slice.forEach(court => {
+        const players = byCourt[court.courtNumber];
+        if (!players || !players.length) return;
+        stHtml += `<div class="tv-court-standings"><div class="tv-court-standings-title">K${court.courtNumber}</div>
+          <table class="tv-table"><thead><tr><th>#</th><th>Nimi</th><th class="tv-num" title="Voitot–tasapelit–häviöt">VTH</th><th class="tv-num">Taso</th><th class="tv-rest" title="Taukojen määrä">L</th><th class="tv-mv" title="Ennustettu siirto">↕</th></tr></thead><tbody>`;
+        players.forEach((s, i) => {
+          stHtml += `<tr class="${i === 0 && players.length > 1 ? 'top' : ''}">
+            <td>${i + 1}</td><td>${esc(s.name)}</td>
+            <td class="tv-num">${s.played > 0 ? recordStr(s) : '–'}</td>
+            <td class="tv-num">${ratingLabel(s.rating)}</td>
+            <td class="tv-rest">${restLive[s.name] || '·'}</td>
+            <td class="tv-mv">${moveBadge(court.courtNumber, proj ? proj[s.name] : null, true)}</td></tr>`;
         });
-        rEl.innerHTML = stHtml;
-      }
+        stHtml += `</tbody></table></div>`;
+      });
+      rEl.innerHTML = stHtml;
 
       const keys = [];
       (d.rounds || []).forEach((rd, r) => Object.keys(rd?.results || {}).forEach(c => keys.push(`${cycleCount}-${r}-${c}`)));
@@ -3098,7 +3234,7 @@
       showLoading('Luodaan tapahtumaa...');
       try {
         resetEventState();
-        await createAndEnter(name, names, selfName);
+        await createAndEnter(name, names, selfName, { useSeedPrior: $('inputUseSeed') ? $('inputUseSeed').checked : true });
         hideLoading();
       } catch (e) {
         hideLoading();
