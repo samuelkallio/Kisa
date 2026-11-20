@@ -1,0 +1,47 @@
+{
+  "rules": {
+    "events": {
+      "$eventId": {
+        ".read": "auth != null",
+        ".write": "auth != null && ((!data.exists() && newData.child('playerCode').val() === $eventId && newData.parent().parent().child('organizerSecret').child($eventId).exists() && newData.parent().parent().child('organizerClaims').child($eventId).child(auth.uid).val() === newData.parent().parent().child('organizerSecret').child($eventId).val()) || (data.exists() && root.child('organizerSecret').child($eventId).exists() && root.child('organizerClaims').child($eventId).child(auth.uid).val() === root.child('organizerSecret').child($eventId).val()))",
+        "rounds": {
+          "$round": {
+            "results": {
+              "$court": {
+                ".write": "auth != null && $round.matches(/^[0-2]$/) && root.child('events').child($eventId).child('courts').child($court).exists()",
+                ".validate": "newData.hasChildren(['team1Score', 'team2Score', 'timestamp'])",
+                "team1Score": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 99 && newData.val() % 1 === 0" },
+                "team2Score": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 99 && newData.val() % 1 === 0" },
+                "timestamp": { ".validate": "newData.isString() && newData.val().length <= 40" },
+                "$other": { ".validate": false }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "organizerCodes": {
+      "$code": {
+        ".read": "auth != null",
+        ".write": "auth != null && ((!data.exists() && newData.isString() && newData.parent().parent().child('organizerSecret').child(newData.val()).val() === $code && !root.child('events').child(newData.val()).exists()) || (data.exists() && !newData.exists() && root.child('organizerSecret').child(data.val()).val() === $code && root.child('organizerClaims').child(data.val()).child(auth.uid).val() === $code))"
+      }
+    },
+
+    "organizerSecret": {
+      "$eventId": {
+        ".read": "auth != null && data.exists() && root.child('organizerClaims').child($eventId).child(auth.uid).val() === data.val()",
+        ".write": "auth != null && ((!data.exists() && newData.isString() && !root.child('events').child($eventId).exists() && newData.parent().parent().child('events').child($eventId).child('playerCode').val() === $eventId && newData.parent().parent().child('organizerCodes').child(newData.val()).val() === $eventId) || (data.exists() && !newData.exists() && root.child('organizerClaims').child($eventId).child(auth.uid).val() === data.val() && !newData.parent().parent().child('events').child($eventId).exists()))"
+      }
+    },
+
+    "organizerClaims": {
+      "$eventId": {
+        "$uid": {
+          ".read": "auth != null && auth.uid === $uid",
+          ".write": "auth != null && auth.uid === $uid && (!newData.exists() || (newData.isString() && newData.val() === newData.parent().parent().parent().child('organizerSecret').child($eventId).val()))"
+        }
+      }
+    }
+  }
+}
