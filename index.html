@@ -1,7 +1,12 @@
 <!DOCTYPE html>
 <!--
   3 Erää - Turnausjärjestelmä
-  Versio: 4.0.0
+  Versio: 4.1.0
+
+  v4.1: Aloitustaso näkyy taas: Sijoitus (alku-luku tason alla), Minä ja Historia.
+        Uusissa tapahtumissa saman aloituskentän pelaajilla on sama aloitustaso (seedByCourt),
+        koska kentän sisäistä paremmuutta ei alussa tiedetä; kenttien välinen ero säilyy.
+        Hallinnassa voi vaihtaa tapahtuman nimen. Oletuszoom 25 % suurempi, säätö -30 % … +40 %.
 
   v4.0: Täysin uusi käyttöliittymä (mobiili ensin, ei rullausta):
         - Sovellus täyttää aina yhden näytön: yläpalkki, yksi tehtävä kerrallaan, alanavigaatio.
@@ -43,18 +48,10 @@
         var theme = localStorage.getItem('APP_ui_theme') || 'auto';
         if (theme === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
         else if (theme === 'light') document.documentElement.setAttribute('data-theme', 'light');
-        var stored = localStorage.getItem('APP_ui_scale');
-        var adj = 0;
-        if (stored) {
-          var num = parseFloat(stored);
-          if (!isNaN(num)) {
-            if (num >= -25 && num <= 20) { adj = Math.round(num / 5) * 5; }
-            else if (num >= 75 && num <= 150) { adj = Math.max(-25, Math.min(20, Math.round((num - 100) / 5) * 5)); }
-            else if (num > 0 && num <= 2) { adj = Math.max(-25, Math.min(20, Math.round((Math.round(num * 100) - 100) / 5) * 5)); }
-          }
-          localStorage.setItem('APP_ui_scale', String(adj));
-        }
-        document.documentElement.style.setProperty('--text-scale', String((100 + adj) / 100));
+        // Zoom: 0 % = oletus (1,25 × peruskoko), säätö -30 % … +40 %. Vanha APP_ui_scale-asetus ei siirry.
+        var num = parseFloat(localStorage.getItem('APP_ui_zoom') || '0');
+        var adj = isNaN(num) ? 0 : Math.max(-30, Math.min(40, Math.round(num / 5) * 5));
+        document.documentElement.style.setProperty('--text-scale', String(1.25 * (100 + adj) / 100));
       } catch (e) {}
     })();
   </script>
@@ -346,7 +343,7 @@
     /* ===== Taulukot ja listat ===== */
     .list { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
     .list-rows { flex: 1 1 auto; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
-    .lrow { display: grid; align-items: center; gap: 8px; padding: 0 10px; min-height: 42px; border-bottom: 1px solid var(--border); font-size: 0.9rem; flex: 0 0 auto; }
+    .lrow { display: grid; align-items: center; gap: 6px; padding: 0 10px; min-height: 42px; border-bottom: 1px solid var(--border); font-size: 0.9rem; flex: 0 0 auto; }
     .lrow:last-child { border-bottom: 0; }
     .lrow.head { min-height: 30px; font-size: 0.68rem; font-weight: 800; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; }
     .lrow.me { background: var(--primary-soft); border-radius: 10px; border-bottom-color: transparent; }
@@ -354,8 +351,10 @@
     .lrow .nm { font-weight: 750; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
     .lrow .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
     .lrow .sub { display: block; font-size: 0.72rem; color: var(--text-muted); font-weight: 600; }
-    .g-court { grid-template-columns: 1.6em minmax(0,1fr) 4.6em 3.4em 4.4em; }
-    .g-all { grid-template-columns: 1.9em minmax(0,1fr) 2.6em 4.6em 3.4em; }
+    .lrow .num .sub, .stat small { font-size: 0.66rem; }
+    .stat small { display: block; color: var(--text-muted); font-weight: 700; }
+    .g-court { grid-template-columns: 1.4em minmax(0,1fr) 3.2em 3.6em 4.3em; }
+    .g-all { grid-template-columns: 1.7em minmax(0,1fr) 2.2em 3.5em 3.6em; }
     .g-hist { grid-template-columns: 2.6em minmax(0,1fr) 4.6em 3.6em; }
     .pager { display: flex; align-items: center; justify-content: center; gap: 10px; flex: 0 0 auto; padding-top: 6px; }
     .pager .pg { font-size: 0.8rem; font-weight: 750; color: var(--text-muted); min-width: 4em; text-align: center; }
@@ -591,7 +590,7 @@
     };
 
     const $ = id => document.getElementById(id);
-    const APP_VERSION = '4.0.0';
+    const APP_VERSION = '4.1.0';
     const OP_TIMEOUT_MS = 12000;
     const URL_PARAMS = new URLSearchParams(window.location.search);
     const LOCAL_MODE = URL_PARAMS.get('local') === '1' ||
@@ -900,13 +899,40 @@
       return (((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5]) * q / (((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + 1);
     }
 
-    // Alkujärjestys (vahvin ensin) kevyeksi lähtöarvoksi luokitukselle
+    // Aloitustaso (luokituksen yksikköinä). Alkujärjestys (vahvin ensin) muutetaan normaalijakauman kvantiileiksi.
+    // seedByCourt: saman aloituskentän pelaajat saavat saman tason (kentän pelaajien keskiarvo), koska kentän sisäistä
+    // paremmuutta ei alussa tiedetä. Kenttien välinen ero säilyy. Aloituskentät = ensimmäisen kierroksen kenttäjako.
+    function startLevelMap(eventData) {
+      const m = {};
+      if (!eventData) return m;
+      if (eventData.seedByCourt) {
+        const first = (eventData.previousCycles || [])[0];
+        const courts = ((first && first.courts) || eventData.courts || []).slice().sort((a, b) => a.courtNumber - b.courtNumber);
+        const order = [];
+        courts.forEach(c => (c.players || []).forEach(p => { if (!order.includes(p)) order.push(p); }));
+        if (order.length < 2) return m;
+        const q = i => SEED_PRIOR_C * qnormApprox(1 - (i + 0.5) / order.length);
+        let i = 0;
+        courts.forEach(c => {
+          const ps = (c.players || []).filter(p => m[p] === undefined);
+          if (!ps.length) return;
+          let sum = 0;
+          ps.forEach(() => { sum += q(i++); });
+          ps.forEach(p => { m[p] = sum / ps.length; });
+        });
+        return m;
+      }
+      const order = eventData.seedOrder;
+      if (!Array.isArray(order) || order.length < 2) return m;
+      order.forEach((p, i) => { m[p] = SEED_PRIOR_C * qnormApprox(1 - (i + 0.5) / order.length); });
+      return m;
+    }
+
+    // Aloitustaso kevyeksi lähtöarvoksi luokitukselle (ellei lähtötieto ole pois käytöstä)
     function seedPriorOf(eventData) {
-      const order = eventData && eventData.seedOrder;
-      if (!Array.isArray(order) || order.length < 2 || (eventData && eventData.useSeedPrior === false)) return null;
-      const n = order.length, pr = {};
-      order.forEach((p, i) => { pr[p] = SEED_PRIOR_C * qnormApprox(1 - (i + 0.5) / n); });
-      return pr;
+      if (!eventData || eventData.useSeedPrior === false) return null;
+      const pr = startLevelMap(eventData);
+      return Object.keys(pr).length ? pr : null;
     }
 
     // Kaikki pelatut pelit: aiemmat kierrokset + käynnissä oleva (valinnaisesti vain erään maxRound asti)
@@ -1056,14 +1082,8 @@
       }));
       return rc;
     }
-    // Alkuperäinen (tapahtuman alussa määritelty) taso: alkujärjestyksestä, vaikka lähtötieto ei olisi käytössä luokituksessa
-    function seedRatingMap(eventData) {
-      const order = eventData && eventData.seedOrder;
-      const m = {};
-      if (!Array.isArray(order) || order.length < 2) return m;
-      order.forEach((p, i) => { m[p] = SEED_PRIOR_C * qnormApprox(1 - (i + 0.5) / order.length); });
-      return m;
-    }
+    // Aloitustaso näytettäväksi, vaikka lähtötieto ei olisi käytössä luokituksessa
+    function seedRatingMap(eventData) { return startLevelMap(eventData); }
 
     function recordStr(s) {
       if (s.ties === undefined && s.losses === undefined) return `${s.wins}/${s.played}`;
@@ -1558,6 +1578,7 @@
     let activeTab = 'play';
     let eventMode = 'tabs';          // 'tabs' | 'moves' (siirtojen esikatselu)
     let uiScaleAdjust = 0;
+    const UI_ZOOM_BASE = 1.25, UI_ZOOM_MIN = -30, UI_ZOOM_MAX = 40;
     let tvMode = false;
     let currentView = 'view-home';
     let lastCycleCount = 0;
@@ -1616,10 +1637,10 @@
     if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', updateThemeColorMeta);
 
     function applyUiScale(adj) {
-      adj = Math.max(-25, Math.min(20, Math.round(adj / 5) * 5));
+      adj = Math.max(UI_ZOOM_MIN, Math.min(UI_ZOOM_MAX, Math.round(adj / 5) * 5));
       uiScaleAdjust = adj;
-      document.documentElement.style.setProperty('--text-scale', String((100 + adj) / 100));
-      try { localStorage.setItem('APP_ui_scale', String(adj)); } catch (e) {}
+      document.documentElement.style.setProperty('--text-scale', String(UI_ZOOM_BASE * (100 + adj) / 100));
+      try { localStorage.setItem('APP_ui_zoom', String(adj)); } catch (e) {}
     }
 
     function showLoading(msg) { $('loadingOverlay').classList.remove('hidden'); $('loadingMessage').textContent = msg || 'Ladataan...'; }
@@ -1751,7 +1772,7 @@
       const courts = computeInitialCourts(playerNames);
       const eventData = {
         playerCode, name, playerNames, courts,
-        seedOrder: [...playerNames], useSeedPrior: opts.useSeedPrior !== false,
+        seedOrder: [...playerNames], useSeedPrior: opts.useSeedPrior !== false, seedByCourt: true,
         rounds: [{ roundIndex: 0, results: {} }, { roundIndex: 1, results: {} }, { roundIndex: 2, results: {} }],
         previousCycles: [], restCounts: {}, lastRestCycle: {}, status: 'active', createdAt: new Date().toISOString()
       };
@@ -2010,7 +2031,7 @@
           <div class="steps"><i class="on"></i><i class="on"></i></div>
           <div style="flex:0 0 auto;"><h2>Kuka olet?</h2><div class="muted small">Valitse oma nimesi, niin näet oman pelisi. Voit myös vain järjestää.</div></div>
           <div class="grow scroll-y"><div class="name-grid" id="cSelf"></div></div>
-          <label class="toggle-line" style="flex:0 0 auto;"><input type="checkbox" id="cSeed" ${cs.seed ? 'checked' : ''}><span class="small"><b>Käytä listan järjestystä lähtötasona</b><br><span class="muted">Tulokset korjaavat virheet kierros kierrokselta.</span></span></label>
+          <label class="toggle-line" style="flex:0 0 auto;"><input type="checkbox" id="cSeed" ${cs.seed ? 'checked' : ''}><span class="small"><b>Käytä kenttäjakoa aloitustasona</b><br><span class="muted">Ylempien kenttien pelaajat aloittavat korkeammalta. Saman kentän pelaajat aloittavat samalta tasolta, ja tulokset ratkaisevat järjestyksen.</span></span></label>
           <p id="cErr2" class="error"></p>
           <div class="btn-row" style="flex:0 0 auto;"><button id="cBack" class="btn ghost" type="button">${icon('left')}<span>Takaisin</span></button><button id="cCreate" class="btn" type="button">${icon('check')}<span>Luo tapahtuma</span></button></div>`;
         const g = $('cSelf');
@@ -2667,10 +2688,12 @@
       top.appendChild(seg);
       const info = el('button', 'icon-btn', icon('info'));
       info.type = 'button'; info.setAttribute('aria-label', 'Näin sijoitus lasketaan');
-      info.onclick = () => openSheet({ title: 'Näin sijoitus lasketaan', render(s) { s.body.innerHTML = `<p class="info-text"><b>Taso</b> lasketaan kaikista peleistäsi koko tapahtumassa. Se huomioi, kenen kanssa pelasit ja ketä vastaan, ja pelin pistesuhde ratkaisee (tasapeli = ½ voittoa).</p><p class="info-text">Kierroksen lopussa kentän paras nousee ylemmälle kentälle ja heikoin putoaa alemmalle. <b>Ennuste</b> (▲ ▼ →) päivittyy jokaisen tuloksen jälkeen.</p><p class="info-text"><b>V–T–H</b> = voitot, tasapelit ja häviöt.</p>`; } });
+      info.onclick = () => openSheet({ title: 'Näin sijoitus lasketaan', render(s) { s.body.innerHTML = `<p class="info-text"><b>Taso</b> lasketaan kaikista peleistäsi koko tapahtumassa. Se huomioi, kenen kanssa pelasit ja ketä vastaan, ja pelin pistesuhde ratkaisee (tasapeli = ½ voittoa).</p><p class="info-text">Kierroksen lopussa kentän paras nousee ylemmälle kentälle ja heikoin putoaa alemmalle. <b>Ennuste</b> (▲ ▼ →) päivittyy jokaisen tuloksen jälkeen.</p><p class="info-text"><b>Alku</b> on aloitustaso, josta taso lähti liikkeelle. Saman aloituskentän pelaajilla se on sama.</p><p class="info-text"><b>V–T–H</b> = voitot, tasapelit ja häviöt.</p>`; } });
       top.appendChild(info);
       v.appendChild(top);
       const proj = projectedCourtMap(d);
+      const startR = seedRatingMap(d);
+      const lvl = (s, bold) => `${bold ? '<b>' : ''}${ratingLabel(s.rating)}${bold ? '</b>' : ''}${startR[s.name] !== undefined ? `<span class="sub" title="Aloitustaso">alku ${ratingLabel(startR[s.name])}</span>` : ''}`;
 
       if (standView === 'court') {
         const byCourt = computeEventStandingsByCourt(d);
@@ -2692,7 +2715,7 @@
         pagedList(v, 'st-court-' + standCourt, '<span>#</span><span>Pelaaja</span><span class="num">V–T–H</span><span class="num">Taso</span><span class="num">Ennuste</span>',
           players.map((s, i) => ({
             me: s.name === currentPlayerName,
-            html: `<span class="pos">${i + 1}</span><span class="nm">${esc(s.name)}</span><span class="num">${s.played ? recordStr(s) : '–'}</span><span class="num">${ratingLabel(s.rating)}</span><span class="num">${mvHtml(standCourt, proj ? proj[s.name] : null)}</span>`
+            html: `<span class="pos">${i + 1}</span><span class="nm">${esc(s.name)}</span><span class="num">${s.played ? recordStr(s) : '–'}</span><span class="num">${lvl(s, false)}</span><span class="num">${mvHtml(standCourt, proj ? proj[s.name] : null)}</span>`
           })), 'g-court');
       } else {
         const overall = computeOverallStandings(d);
@@ -2700,7 +2723,7 @@
         pagedList(v, 'st-all', '<span>#</span><span>Pelaaja</span><span class="num">Kent.</span><span class="num">V–T–H</span><span class="num">Taso</span>',
           overall.map((s, i) => ({
             me: s.name === currentPlayerName,
-            html: `<span class="pos">${i + 1}.</span><span class="nm">${esc(s.name)}<span class="sub">${s.played ? Math.round(s.share * 100) + ' % pisteistä' : 'ei pelejä'} · lepo ${restLive[s.name] || 0}</span></span><span class="num">${s.court ? 'K' + s.court : '–'}</span><span class="num">${s.played ? recordStr(s) : '–'}</span><span class="num"><b>${ratingLabel(s.rating)}</b></span>`
+            html: `<span class="pos">${i + 1}.</span><span class="nm">${esc(s.name)}<span class="sub">${s.played ? Math.round(s.share * 100) + ' % pisteistä' : 'ei pelejä'} · lepo ${restLive[s.name] || 0}</span></span><span class="num">${s.court ? 'K' + s.court : '–'}</span><span class="num">${s.played ? recordStr(s) : '–'}</span><span class="num">${lvl(s, true)}</span>`
           })), 'g-all');
       }
     }
@@ -2734,9 +2757,10 @@
       const overall = computeOverallStandings(d);
       const i = overall.findIndex(s => s.name === currentPlayerName);
       const me = overall[i];
+      const startR = seedRatingMap(d);
       const trio = el('div', 'stat-trio');
       trio.innerHTML = `<div class="stat"><b>${i >= 0 ? (i + 1) + '/' + overall.length : '–'}</b><span>Sijoitus</span></div>
-        <div class="stat"><b>${me ? ratingLabel(me.rating) : '–'}</b><span>Taso</span></div>
+        <div class="stat"><b>${me ? ratingLabel(me.rating) : '–'}</b><span>Taso</span>${startR[currentPlayerName] !== undefined ? `<small>alku ${ratingLabel(startR[currentPlayerName])}</small>` : ''}</div>
         <div class="stat"><b>${me && me.played ? recordStr(me) : '–'}</b><span>V–T–H</span></div>`;
       v.appendChild(trio);
       const rows = myCycleRows(d);
@@ -2914,6 +2938,7 @@
       codes.querySelector('#adP').onclick = () => openShareSheet();
       codes.querySelector('#adO').onclick = () => { if (orgCode) openOrgCodeSheet(orgCode); };
       const tiles = [
+        ['edit', 'Tapahtuman nimi', d.name || 'Ei nimeä', () => openRenameSheet()],
         ['qr', 'Jaa pelaajille', 'QR-koodi ja linkki', () => openShareSheet()],
         ['tv', 'TV-näkymä', 'Isolle näytölle vaakaan', () => {
           const url = window.location.origin + window.location.pathname + '?event=' + encodeURIComponent(currentEventId) + '&tv=1' + (LOCAL_MODE ? '&local=1' : '');
@@ -2924,7 +2949,7 @@
       ];
       if (LOCAL_MODE) tiles.push(['dice', 'Täytä tulokset', 'Testi: satunnaiset tulokset', () => fillRandomResults(), 'warn']);
       tiles.push(['trash', 'Poista tapahtuma', 'Pysyvästi kaikilta laitteilta', () => deleteEvent(), 'danger']);
-      if (!LOCAL_MODE) tiles.splice(4, 0, ['logout', 'Poistu', 'Takaisin etusivulle', () => leaveEvent()]);
+      if (!LOCAL_MODE) tiles.splice(5, 0, ['logout', 'Poistu', 'Takaisin etusivulle', () => leaveEvent()]);
       const grid = el('div', 'launch');
       tiles.forEach(([ic, title, sub, fn, cls]) => {
         const b = el('button', 'launch-btn' + (cls ? ' ' + cls : ''), `<div class="lb-ic">${icon(ic)}</div><div><b>${title}</b><br><span>${esc(sub)}</span></div>`);
@@ -2932,6 +2957,37 @@
         grid.appendChild(b);
       });
       v.appendChild(grid);
+    }
+
+    function openRenameSheet() {
+      if (!currentEventData) return;
+      openSheet({
+        title: 'Tapahtuman nimi',
+        render(s) {
+          s.body.innerHTML = `<input id="rnName" class="field" type="text" maxlength="60" enterkeyhint="done" placeholder="Tapahtuman nimi" value="${esc(currentEventData.name || '')}"><div class="hint" id="rnErr"></div>`;
+          const inp = s.body.querySelector('#rnName');
+          const save = async () => {
+            const name = inp.value.trim().slice(0, 60);
+            if (!name) { s.body.querySelector('#rnErr').textContent = 'Anna tapahtumalle nimi.'; return; }
+            if (name === currentEventData.name) { s.close(); return; }
+            sv.disabled = true;
+            try {
+              await withAuthRetry(() => backend.update('events/' + currentEventId, { name }), { write: true });
+              const entry = getEventEntry(currentEventId);
+              if (entry) upsertRecentEvent({ ...entry, name });
+              s.close();
+              showToast('Nimi vaihdettu', { type: 'success' });
+            } catch (e) { sv.disabled = false; notify('Virhe: ' + e.message); }
+          };
+          inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); save(); } });
+          const row = el('div', 'btn-row');
+          row.appendChild(btn('Peruuta', 'ghost', () => s.close()));
+          const sv = btn('Tallenna', '', save, 'check');
+          row.appendChild(sv);
+          s.foot.appendChild(row);
+          setTimeout(() => { try { inp.focus(); inp.select(); } catch (e) {} }, 50);
+        }
+      });
     }
 
     function openShareSheet() {
@@ -3151,9 +3207,11 @@
           next.forEach(c => (c.players || []).forEach(p => { nextOf[p] = c.courtNumber; }));
           const mv = el('div', 'card tight col');
           mv.style.gap = '2px';
+          const startR = seedRatingMap(d);
           mv.innerHTML = '<div class="label">Pelaajat ja siirrot</div>' + (court.players || []).map(p => {
             const x = (cycle.standings || []).find(y => y.name === p);
-            return `<div class="mv-p"><b>${esc(p)}</b><span class="muted small" style="flex:1;text-align:right;">${x ? recordStr(x) + ' · ' + ratingLabel(x.rating) : ''}</span><span style="width:3.4em;text-align:right;">${mvHtml(court.courtNumber, nextOf[p])}</span></div>`;
+            const al = startR[p] !== undefined ? 'alku ' + ratingLabel(startR[p]) : '';
+            return `<div class="mv-p"><b>${esc(p)}</b><span class="muted small" style="flex:1;min-width:0;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${x ? recordStr(x) + ' · ' + ratingLabel(x.rating) + (al ? ' · ' + al : '') : al}</span><span style="width:3.4em;text-align:right;">${mvHtml(court.courtNumber, nextOf[p])}</span></div>`;
           }).join('');
           s.body.appendChild(mv);
           s.body.appendChild(el('div', 'tiny muted', 'Muokkaus päivittää kierroksen sijoitukset, mutta ei jo tehtyjä siirtoja.'));
@@ -3171,7 +3229,7 @@
       rounds[rIdx].results[courtIdx] = newRes;
       const cycPlayers = [];
       (pc.courts || []).forEach(c => (c.players || []).forEach(p => cycPlayers.push(p)));
-      const newStandings = computeStandings({ courts: pc.courts, rounds, playerNames: cycPlayers, previousCycles: (fresh.previousCycles || []).slice(0, cycIdx), seedOrder: fresh.seedOrder, useSeedPrior: fresh.useSeedPrior });
+      const newStandings = computeStandings({ courts: pc.courts, rounds, playerNames: cycPlayers, previousCycles: (fresh.previousCycles || []).slice(0, cycIdx), seedOrder: fresh.seedOrder, useSeedPrior: fresh.useSeedPrior, seedByCourt: fresh.seedByCourt });
       // Yksi atominen päivitys: tulos ja sijoitukset
       await withAuthRetry(() => backend.update('events/' + currentEventId, {
         [`previousCycles/${cycIdx}/rounds/${rIdx}/results/${courtIdx}`]: newRes,
@@ -3191,9 +3249,9 @@
           const theme = getThemeSetting();
           s.body.innerHTML = `<div class="label">Teema</div>
             <div class="radio-seg">${[['auto', 'Auto'], ['light', 'Vaalea'], ['dark', 'Tumma']].map(([val, l]) => `<label><input type="radio" name="uiTheme" value="${val}" ${theme === val ? 'checked' : ''}><span>${l}</span></label>`).join('')}</div>
-            <div class="label">Tekstikoko</div>
+            <div class="label">Zoom</div>
             <div class="size-ctl"><button class="step" type="button" id="szM" aria-label="Pienempi">${icon('minus')}</button><div class="v" id="szV"></div><button class="step" type="button" id="szP" aria-label="Suurempi">${icon('plus')}</button></div>`;
-          const upd = () => { s.body.querySelector('#szV').textContent = (uiScaleAdjust > 0 ? '+' : '') + uiScaleAdjust + ' %'; s.body.querySelector('#szM').disabled = uiScaleAdjust <= -25; s.body.querySelector('#szP').disabled = uiScaleAdjust >= 20; };
+          const upd = () => { s.body.querySelector('#szV').textContent = (uiScaleAdjust > 0 ? '+' : '') + uiScaleAdjust + ' %'; s.body.querySelector('#szM').disabled = uiScaleAdjust <= UI_ZOOM_MIN; s.body.querySelector('#szP').disabled = uiScaleAdjust >= UI_ZOOM_MAX; };
           s.body.querySelectorAll('input[name="uiTheme"]').forEach(r => { r.onchange = () => { if (r.checked) applyTheme(r.value); }; });
           s.body.querySelector('#szM').onclick = () => { applyUiScale(uiScaleAdjust - 5); upd(); lastRenderSig = null; renderCurrent(); };
           s.body.querySelector('#szP').onclick = () => { applyUiScale(uiScaleAdjust + 5); upd(); lastRenderSig = null; renderCurrent(); };
@@ -3457,7 +3515,7 @@
         return;
       }
       try {
-        const num = parseFloat(localStorage.getItem('APP_ui_scale') || '0');
+        const num = parseFloat(localStorage.getItem('APP_ui_zoom') || '0');
         if (!isNaN(num)) applyUiScale(num);
       } catch (e) {}
       updateThemeColorMeta();
