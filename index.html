@@ -1,7 +1,14 @@
 <!DOCTYPE html>
 <!--
   3 Erää - Turnausjärjestelmä
-  Versio: 4.3.0
+  Versio: 4.4.0
+
+  v4.4: Pelaajat-näkymässä pelaajaa voi raahata vasta, kun se on ensin valittu napauttamalla (puhelimessa
+        vieritys ei enää siirrä pelaajia vahingossa).
+        Ylätunniste: tapahtumassa ei enää paluunuolta (poistuminen: Minä → Poistu tai Hallinta → Poistu).
+        QR-koodinappi näkyy myös pelaajille, jotta tapahtuman voi jakaa eteenpäin.
+        Sijoitus on vieritettävä lista sivutuksen sijaan (otsikkorivi pysyy paikallaan).
+        TV-näkymän oikeassa yläkulmassa on sulkuruksi.
 
   v4.3: Hallinnassa voi muokata pelaajan nimeä (Hallinta → Pelaajan nimi, tai Pelaajat-näkymässä valitun
         pelaajan "Muokkaa nimeä"). Nimi vaihtuu kaikkialle historiaa myöten, ja pelaajan omalla laitteella
@@ -364,6 +371,7 @@
     /* ===== Taulukot ja listat ===== */
     .list { flex: 1 0 0; min-height: 10rem; display: flex; flex-direction: column; overflow: hidden; }
     .list-rows { flex: 1 1 auto; min-height: 0; overflow: auto; }
+    .scroll-list .list-rows { position: relative; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
     .lrow { display: grid; align-items: center; column-gap: 8px; padding: 4px 8px; min-height: 42px; border-bottom: 1px solid var(--border); font-size: 0.9rem; flex: 0 0 auto; }
     .lrow:last-child { border-bottom: 0; }
     .lrow.head { min-height: 30px; font-size: 0.68rem; font-weight: 800; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; }
@@ -410,7 +418,8 @@
     .pchip.sel { background: var(--primary); color: var(--on-primary); border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
     .pchip.new { border-style: dashed; border-color: var(--win); }
     .pchip.target { border-color: var(--primary); }
-    .pchip { touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+    .pchip { touch-action: pan-x pan-y; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+    .pchip.sel { touch-action: none; cursor: grab; }
     .pchip.dragging { opacity: .35; }
     .pchip.drop { background: var(--primary-soft); border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
     .pm-court.drop { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
@@ -522,12 +531,15 @@
     .tv-title { font-size: clamp(22px, 4.4vh, 64px); font-weight: 800; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 0; color: #fff; }
     .tv-status { font-size: clamp(16px, 2.6vh, 38px); color: #aab1c2; margin-top: 0.3vh; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .tv-status strong { color: #9aa6ff; }
-    .tv-qr { flex: 0 0 auto; text-align: center; margin-right: 11vh; }
+    .tv-qr { flex: 0 0 auto; text-align: center; margin-right: 16vh; }
     .tv-qr img { display: block; background: #fff; padding: 0.5vh; border-radius: 6px; height: 9.9vh; width: 9.9vh; object-fit: contain; }
     .tv-qr-label { font-size: 1.6vh; color: #aab1c2; margin-top: 0.3vh; }
-    .tv-fs { position: absolute; top: 1.2vh; right: 1vw; width: auto; min-height: 0; margin: 0; padding: 0.8vh 1.2vh; font-size: 1.8vh; background: #1f232e; color: #fff; border: 1px solid #3a4050; border-radius: 8px; opacity: 0.9; z-index: 6; }
+    .tv-fs { position: absolute; top: 1.2vh; right: calc(1vw + 5.4vh); width: auto; min-height: 0; margin: 0; padding: 0.8vh 1.2vh; font-size: 1.8vh; background: #1f232e; color: #fff; border: 1px solid #3a4050; border-radius: 8px; opacity: 0.9; z-index: 6; }
     .tv-fs .ic { width: 2.4vh; height: 2.4vh; }
-    body.tv-idle .tv-fs { opacity: 0; pointer-events: none; }
+    .tv-close { position: absolute; top: 1.2vh; right: 1vw; width: 4.6vh; height: 4.6vh; min-width: 32px; min-height: 32px; margin: 0; padding: 0; display: flex; align-items: center; justify-content: center; background: #1f232e; color: #fff; border: 1px solid #3a4050; border-radius: 8px; opacity: 0.9; z-index: 6; cursor: pointer; }
+    .tv-close .ic { width: 2.8vh; height: 2.8vh; min-width: 18px; min-height: 18px; }
+    .tv-close:hover { background: #2c3242; }
+    body.tv-idle .tv-fs, body.tv-idle .tv-close { opacity: 0; pointer-events: none; }
     .tv-main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.4fr); gap: 1.2vw; }
     .tv-col { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 1vh; }
     .tv-section-title { flex: 0 0 auto; font-size: clamp(14px, 2.2vh, 32px); font-weight: 800; color: #9aa6ff; text-transform: uppercase; letter-spacing: 0.08em; display: flex; justify-content: space-between; }
@@ -580,7 +592,7 @@
         <div class="tb-sub hidden" id="tbSub"></div>
       </div>
       <span id="connBadge" class="conn" role="status" aria-label="Yhteys kunnossa" title="Yhteys kunnossa"></span>
-      <button class="icon-btn hidden" id="btnShareTop" aria-label="Jaa pelaajille" type="button"></button>
+      <button class="icon-btn hidden" id="btnShareTop" aria-label="Jaa tapahtuma (QR-koodi)" type="button"></button>
       <button class="icon-btn" id="btnSettingsTop" aria-label="Asetukset" type="button"></button>
       <div class="tb-progress"><span id="tbProgress" style="width:0%"></span></div>
     </header>
@@ -598,6 +610,7 @@
   <div id="view-tv">
     <div id="tvRotate">Käännä laite vaakaan</div>
     <button class="tv-fs" id="tvFs" type="button" aria-label="Kokonäyttö"></button>
+    <button class="tv-close" id="tvClose" type="button" aria-label="Sulje TV-näkymä" title="Sulje"></button>
     <div class="tv-wrap">
       <div class="tv-top">
         <div class="tv-top-info">
@@ -641,7 +654,7 @@
     };
 
     const $ = id => document.getElementById(id);
-    const APP_VERSION = '4.3.0';
+    const APP_VERSION = '4.4.0';
     const OP_TIMEOUT_MS = 12000;
     const URL_PARAMS = new URLSearchParams(window.location.search);
     const LOCAL_MODE = URL_PARAMS.get('local') === '1' ||
@@ -1766,8 +1779,9 @@
     function showView(viewId) {
       ['view-home', 'view-create', 'view-event'].forEach(v => $(v).classList.toggle('hidden', v !== viewId));
       currentView = viewId;
-      $('btnBack').classList.toggle('hidden', viewId === 'view-home');
-      $('btnShareTop').classList.toggle('hidden', !(viewId === 'view-event' && currentRole === 'organizer'));
+      // Tapahtumassa ei paluunuolta (poistuminen: Minä/Hallinta → Poistu); vain alinäkymistä palataan.
+      $('btnBack').classList.toggle('hidden', viewId === 'view-home' || (viewId === 'view-event' && eventMode === 'tabs'));
+      $('btnShareTop').classList.toggle('hidden', viewId !== 'view-event');
       if (viewId !== 'view-event') setTopbar(viewId === 'view-create' ? 'Uusi tapahtuma' : '3 Erää', null, 0);
       lastRenderSig = null;
       renderNav();
@@ -1785,6 +1799,7 @@
       editingRounds.clear(); scoreDrafts.clear(); lastCycleCount = 0; eventMode = 'tabs';
       playSel = { key: null, view: null, manual: false }; standCourt = null; pm = null; lastRenderSig = null;
       Object.keys(pageState).forEach(k => delete pageState[k]);
+      Object.keys(listScroll).forEach(k => delete listScroll[k]);
       closeAllSheets();
     }
 
@@ -2305,7 +2320,8 @@
         ? `Kierros ${cycleCount + 1} valmis · ${st.totalEntered}/${st.total}`
         : (isCompact() ? `Kierros ${cycleCount + 1} · E${st.currentRound}/3 · ${st.totalEntered}/${st.total}` : `Kierros ${cycleCount + 1} · Erä ${st.currentRound}/3 · ${st.totalEntered}/${st.total} tulosta`);
       setTopbar(d.name || d.playerCode || 'Tapahtuma', sub, st.total ? Math.round(100 * st.totalEntered / st.total) : 0);
-      $('btnShareTop').classList.toggle('hidden', currentRole !== 'organizer');
+      $('btnShareTop').classList.remove('hidden');
+      $('btnBack').classList.toggle('hidden', eventMode === 'tabs');
 
       const ids = tabsForRole().map(t => t[0]);
       if (!ids.includes(activeTab)) activeTab = defaultTab();
@@ -2792,6 +2808,31 @@
       draw();
     }
 
+    // ---------- Vieritettävä lista (sijoitus) ----------
+    // Otsikkorivi pysyy paikallaan, rivit vierivät. Vierityskohta säilyy päivitysten yli;
+    // ensimmäisellä kerralla oma rivi vieritetään näkyviin.
+    const listScroll = {};
+    function scrollList(parent, key, head, rows, cls) {
+      const list = el('div', 'list card scroll-list');
+      list.style.padding = '4px';
+      if (head) list.appendChild(el('div', `lrow head ${cls}`, head));
+      const rowsEl = el('div', 'list-rows');
+      list.appendChild(rowsEl);
+      parent.appendChild(list);
+      let meNode = null;
+      rows.forEach(r => {
+        const n = el('div', `lrow ${cls}${r.me ? ' me' : ''}`, r.html);
+        if (r.onClick) { n.style.cursor = 'pointer'; n.onclick = r.onClick; }
+        if (r.me && !meNode) meNode = n;
+        rowsEl.appendChild(n);
+      });
+      if (listScroll[key] !== undefined) rowsEl.scrollTop = listScroll[key];
+      else if (meNode && meNode.offsetTop + meNode.offsetHeight > rowsEl.clientHeight) {
+        rowsEl.scrollTop = Math.max(0, meNode.offsetTop - (rowsEl.clientHeight - meNode.offsetHeight) / 2);
+      }
+      rowsEl.addEventListener('scroll', () => { listScroll[key] = rowsEl.scrollTop; }, { passive: true });
+    }
+
     function mvHtml(courtNum, nc) {
       if (nc === undefined || nc === null) return '<span class="stay">–</span>';
       if (nc < courtNum) return `<span class="up">▲K${nc}</span>`;
@@ -2841,7 +2882,7 @@
         const players = byCourt[standCourt] || [];
         const entered = court ? courtResults(d, court).filter(Boolean).length : 0;
         v.appendChild(el('div', 'row between small', `<b>${courtLabel(standCourt)}</b><span class="muted">${entered}/3 erää · <span class="dots">${court ? courtResults(d, court).map(x => `<i class="${x ? 'done' : ''}"></i>`).join('') : ''}</span></span>`));
-        pagedList(v, 'st-court-' + standCourt, `<span>#</span><span>${isCompact() ? 'Nimi' : 'Pelaaja'}</span><span class="num">V–T–H</span>${tasoHead}<span class="num" title="Ennuste">Enn.</span>`,
+        scrollList(v, 'st-court-' + standCourt, `<span>#</span><span>${isCompact() ? 'Nimi' : 'Pelaaja'}</span><span class="num">V–T–H</span>${tasoHead}<span class="num" title="Ennuste">Enn.</span>`,
           players.map((s, i) => ({
             me: s.name === currentPlayerName,
             html: `<span class="pos">${i + 1}</span><span class="nm">${esc(s.name)}</span><span class="num">${s.played ? recordStr(s) : '–'}</span><span class="num">${lvl(s, false)}</span><span class="num">${mvHtml(standCourt, proj ? proj[s.name] : null)}</span>`
@@ -2849,7 +2890,7 @@
       } else {
         const overall = computeOverallStandings(d);
         const restLive = computeRestCountsLive(d);
-        pagedList(v, 'st-all', `<span>#</span><span>${isCompact() ? 'Nimi' : 'Pelaaja'}</span><span class="num" title="Kenttä">K</span><span class="num">V–T–H</span>${tasoHead}`,
+        scrollList(v, 'st-all', `<span>#</span><span>${isCompact() ? 'Nimi' : 'Pelaaja'}</span><span class="num" title="Kenttä">K</span><span class="num">V–T–H</span>${tasoHead}`,
           overall.map((s, i) => ({
             me: s.name === currentPlayerName,
             html: `<span class="pos">${i + 1}.</span><span class="nm">${esc(s.name)}<span class="sub">${s.played ? Math.round(s.share * 100) + (isCompact() ? ' %' : ' % pisteistä') : 'ei pelejä'} · lepo ${restLive[s.name] || 0}</span></span><span class="num">${s.court ? 'K' + s.court : '–'}</span><span class="num">${s.played ? recordStr(s) : '–'}</span><span class="num">${lvl(s, true)}</span>`
@@ -2948,7 +2989,7 @@
 
       const info = el('div', 'row between');
       info.style.flex = '0 0 auto';
-      info.innerHTML = `<div><h2>${list.length} pelaajaa</h2><div class="muted small">${pm.sel !== null ? `Napauta toista pelaajaa vaihtaaksesi paikkaa` : 'Raahaa tai napauta pelaajaa siirtääksesi'}</div></div>${sizes ? `<span class="count-badge ok">${sizes.length} kenttää</span>` : '<span class="count-badge bad">ei tuettu</span>'}`;
+      info.innerHTML = `<div><h2>${list.length} pelaajaa</h2><div class="muted small">${pm.sel !== null ? (isCompact() ? `Raahaa tai napauta toista` : `Raahaa toiselle kentälle tai napauta toista pelaajaa`) : 'Valitse pelaaja napauttamalla, niin voit siirtää sen'}</div></div>${sizes ? `<span class="count-badge ok">${sizes.length} kenttää</span>` : '<span class="count-badge bad">ei tuettu</span>'}`;
       v.appendChild(info);
 
       const grid = el('div', 'pm-grid');
@@ -3024,6 +3065,7 @@
     // Raahaus: pelaajan pudotus toisen pelaajan päälle vaihtaa paikat, kentän tyhjään kohtaan
     // pudotus siirtää pelaajan kentän viimeiseksi (muut siirtyvät yhden paikan). Pointer Events
     // kattaa hiiren, kosketuksen ja kynän; raahaus alkaa vasta kun sormi liikkuu, joten napautus toimii kuten ennen.
+    // Raahata voi vain valittua pelaajaa (napautus valitsee), jotta puhelimessa vieritys ei siirrä pelaajia vahingossa.
     function pmTap(idx) {
       const list = pm.list;
       if (pm.sel === null) pm.sel = idx;
@@ -3034,11 +3076,12 @@
     function pmDragStart(e, chip, idx, name) {
       if (e.button !== undefined && e.button !== 0) return;
       if (pmDrag && pmDrag.active) return;
-      pmDrag = { chip, idx, name, id: e.pointerId, x0: e.clientX, y0: e.clientY, active: false, ghost: null, target: null, pending: false };
+      pmDrag = { chip, idx, name, id: e.pointerId, x0: e.clientX, y0: e.clientY, active: false, ghost: null, target: null, pending: false, canDrag: !!pm && pm.sel === idx, moved: false };
       const move = (ev) => {
         if (!pmDrag || ev.pointerId !== pmDrag.id) return;
         if (!pmDrag.active) {
           if (Math.hypot(ev.clientX - pmDrag.x0, ev.clientY - pmDrag.y0) < 8) return;
+          if (!pmDrag.canDrag) { pmDrag.moved = true; return; } // valitsematonta ei raahata
           pmDrag.active = true;
           try { chip.setPointerCapture(ev.pointerId); } catch (_) {}
           const r = chip.getBoundingClientRect();
@@ -3062,6 +3105,7 @@
         const st = pmDrag;
         pmDrag = null;
         if (!st.active) {
+          if (st.moved) { pmPointerAt = Date.now(); return; }
           if (ev.type === 'pointerup' && pm && pm.list[st.idx] === st.name) { pmPointerAt = Date.now(); pmTap(st.idx); }
           return;
         }
@@ -3170,7 +3214,7 @@
       ];
       if (LOCAL_MODE) tiles.push(['dice', 'Täytä tulokset', 'Testi: satunnaiset tulokset', () => fillRandomResults(), 'warn']);
       tiles.push(['trash', 'Poista tapahtuma', 'Pysyvästi kaikilta laitteilta', () => deleteEvent(), 'danger']);
-      if (!LOCAL_MODE) tiles.splice(6, 0, ['logout', 'Poistu', 'Takaisin etusivulle', () => leaveEvent()]);
+      tiles.splice(6, 0, ['logout', 'Poistu', 'Takaisin etusivulle', () => leaveEvent()]);
       const grid = el('div', 'launch');
       tiles.forEach(([ic, title, sub, fn, cls]) => {
         const b = el('button', 'launch-btn' + (cls ? ' ' + cls : ''), `<div class="lb-ic">${icon(ic)}</div><div><b>${title}</b><br><span>${esc(sub)}</span></div>`);
@@ -3299,7 +3343,7 @@
       const playerCode = currentEventData.playerCode || currentEventId;
       const url = `${location.origin}${location.pathname}?event=${encodeURIComponent(playerCode)}${LOCAL_MODE ? '&local=1' : ''}`;
       openSheet({
-        title: 'Jaa pelaajille',
+        title: currentRole === 'organizer' ? 'Jaa pelaajille' : 'Jaa tapahtuma',
         render(s) {
           const qrBox = el('div', 'qr-box');
           if (typeof qrcode === 'function') {
@@ -3611,6 +3655,17 @@
       } else if (document.exitFullscreen) document.exitFullscreen();
     }
 
+    // TV avataan omaan välilehteen, joten sulkeminen sulkee välilehden. Jos selain ei salli sitä
+    // (esim. linkki avattu suoraan), siirrytään sovelluksen etusivulle.
+    function closeTV() {
+      try { if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {}); } catch (e) {}
+      try { window.close(); } catch (e) {}
+      setTimeout(() => {
+        if (window.closed) return;
+        window.location.href = window.location.pathname + (URL_PARAMS.get('local') === '1' ? '?local=1' : '');
+      }, 250);
+    }
+
     function initTVMode() {
       tvMode = true;
       document.body.classList.add('tv-mode');
@@ -3619,6 +3674,7 @@
       if (!eventId || !isValidCodeFormat(eventId)) { document.body.innerHTML = '<div style="padding:40px;color:#fff;font-size:24px;">Tapahtumaa ei löytynyt.</div>'; return; }
       currentEventId = eventId;
       $('tvFs').onclick = toggleFullscreen;
+      $('tvClose').onclick = closeTV;
       document.addEventListener('keydown', (e) => { if (e.key === 'f' || e.key === 'F') toggleFullscreen(); });
       const wake = () => {
         document.body.classList.remove('tv-idle');
@@ -3742,6 +3798,7 @@
       $('btnSettingsTop').innerHTML = icon('settings');
       $('btnShareTop').innerHTML = icon('qr');
       $('tvFs').innerHTML = icon('fullscreen') + 'Kokonäyttö';
+      $('tvClose').innerHTML = icon('close');
       $('btnBack').onclick = () => {
         if (currentView === 'view-event') {
           if (eventMode !== 'tabs') { eventMode = 'tabs'; renderEventView(); return; }
