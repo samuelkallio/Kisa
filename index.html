@@ -1,7 +1,12 @@
 <!DOCTYPE html>
 <!--
   3 Erää - Turnausjärjestelmä
-  Versio: 4.1.0
+  Versio: 4.2.0
+
+  v4.2: Järjestäjän Pelaajat-näkymässä pelaajia voi raahata kentältä toiselle (hiiri ja kosketus).
+        Pudotus toisen pelaajan päälle vaihtaa paikat; pudotus kentän tyhjään kohtaan siirtää
+        pelaajan kentän viimeiseksi ja välissä olevien kenttien pelaajat siirtyvät yhden paikan.
+        Napauta ja vaihda toimii kuten ennen.
 
   v4.1: Aloitustaso näkyy taas: Sijoitus (alku-luku tason alla), Minä ja Historia.
         Uusissa tapahtumissa saman aloituskentän pelaajilla on sama aloitustaso (seedByCourt),
@@ -371,6 +376,11 @@
     .pchip.sel { background: var(--primary); color: var(--on-primary); border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
     .pchip.new { border-style: dashed; border-color: var(--win); }
     .pchip.target { border-color: var(--primary); }
+    .pchip { touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+    .pchip.dragging { opacity: .35; }
+    .pchip.drop { background: var(--primary-soft); border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+    .pm-court.drop { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+    .pchip-ghost { position: fixed; left: 0; top: 0; z-index: 80; pointer-events: none; margin: 0; background: var(--primary); color: var(--on-primary); border-color: var(--primary); box-shadow: 0 8px 24px rgba(0,0,0,.25); transform-origin: center; opacity: .95; }
     .action-bar { flex: 0 0 auto; display: flex; flex-direction: column; gap: 6px; }
 
     /* ===== Hallinta ===== */
@@ -590,7 +600,7 @@
     };
 
     const $ = id => document.getElementById(id);
-    const APP_VERSION = '4.1.0';
+    const APP_VERSION = '4.2.0';
     const OP_TIMEOUT_MS = 12000;
     const URL_PARAMS = new URLSearchParams(window.location.search);
     const LOCAL_MODE = URL_PARAMS.get('local') === '1' ||
@@ -1591,6 +1601,8 @@
     let playSel = { key: null, view: null, manual: false };
     let standView = 'court', standCourt = null;
     let pm = null;                     // pelaajahallinnan luonnos
+    let pmDrag = null;                 // käynnissä oleva pelaajan raahaus (Pelaajat-näkymä)
+    let pmPointerAt = 0;               // viimeisimmän osoittimella tehdyn napautuksen/raahauksen aika
     let createState = null;
 
     const DEMO_NAMES = ['Aino','Eino','Helmi','Onni','Siiri','Veeti','Lumi','Oskari','Elmeri','Venla','Aatu','Ella','Leevi','Emma','Eetu','Ilona','Joel','Kerttu','Lauri','Maija','Niilo','Väinö','Toivo','Ellen'];
@@ -2181,6 +2193,7 @@
 
     function renderEventView() {
       if (!currentEventData || currentView !== 'view-event') return;
+      if (pmDrag && pmDrag.active) { pmDrag.pending = true; return; }
       const d = currentEventData;
       const cycleCount = (d.previousCycles || []).length;
       if (cycleCount !== lastCycleCount) {
@@ -2819,7 +2832,7 @@
 
       const info = el('div', 'row between');
       info.style.flex = '0 0 auto';
-      info.innerHTML = `<div><h2>${list.length} pelaajaa</h2><div class="muted small">${pm.sel !== null ? `Napauta toista pelaajaa vaihtaaksesi paikkaa` : 'Napauta pelaajaa siirtääksesi tai poistaaksesi'}</div></div>${sizes ? `<span class="count-badge ok">${sizes.length} kenttää</span>` : '<span class="count-badge bad">ei tuettu</span>'}`;
+      info.innerHTML = `<div><h2>${list.length} pelaajaa</h2><div class="muted small">${pm.sel !== null ? `Napauta toista pelaajaa vaihtaaksesi paikkaa` : 'Raahaa tai napauta pelaajaa siirtääksesi'}</div></div>${sizes ? `<span class="count-badge ok">${sizes.length} kenttää</span>` : '<span class="count-badge bad">ei tuettu</span>'}`;
       v.appendChild(info);
 
       const grid = el('div', 'pm-grid');
@@ -2830,6 +2843,7 @@
       const origSet = new Set(pm.base);
       groups.forEach(g => {
         const box = el('div', 'pm-court' + (resetSet.has(g.ci + 1) ? ' reset' : ''));
+        box.dataset.ci = g.ci; box.dataset.start = g.start; box.dataset.end = g.start + g.names.length;
         const hadRes = g.ci >= 0 && [0, 1, 2].some(r => getCourtResult(d, r, g.ci));
         box.innerHTML = `<div class="pm-h"><span>${g.ci >= 0 ? 'Kenttä ' + (g.ci + 1) : 'Pelaajat'}</span>${resetSet.has(g.ci + 1) ? '<span class="pill rest">nollataan</span>' : (dirty && hadRes ? '<span class="pill win">säilyy</span>' : `<span class="tiny muted">${g.names.length}</span>`)}</div>`;
         const chips = el('div', 'pm-chips');
@@ -2837,12 +2851,10 @@
           const idx = g.start + k;
           const c = el('button', 'pchip' + (pm.sel === idx ? ' sel' : '') + (!origSet.has(name) ? ' new' : '') + (pm.sel !== null && pm.sel !== idx ? ' target' : ''));
           c.type = 'button'; c.textContent = name;
-          c.onclick = () => {
-            if (pm.sel === null) pm.sel = idx;
-            else if (pm.sel === idx) pm.sel = null;
-            else { [list[pm.sel], list[idx]] = [list[idx], list[pm.sel]]; pm.sel = null; }
-            renderEventView();
-          };
+          c.dataset.idx = idx;
+          c.addEventListener('pointerdown', (e) => pmDragStart(e, c, idx, name));
+          // Osoitin hoitaa napautuksen itse (pointerup); click jää näppäimistölle.
+          c.onclick = () => { if (Date.now() - pmPointerAt > 700) pmTap(idx); };
           chips.appendChild(c);
         });
         box.appendChild(chips);
@@ -2891,6 +2903,97 @@
         bar.appendChild(row);
       }
       v.appendChild(bar);
+    }
+    // Raahaus: pelaajan pudotus toisen pelaajan päälle vaihtaa paikat, kentän tyhjään kohtaan
+    // pudotus siirtää pelaajan kentän viimeiseksi (muut siirtyvät yhden paikan). Pointer Events
+    // kattaa hiiren, kosketuksen ja kynän; raahaus alkaa vasta kun sormi liikkuu, joten napautus toimii kuten ennen.
+    function pmTap(idx) {
+      const list = pm.list;
+      if (pm.sel === null) pm.sel = idx;
+      else if (pm.sel === idx) pm.sel = null;
+      else { [list[pm.sel], list[idx]] = [list[idx], list[pm.sel]]; pm.sel = null; }
+      renderEventView();
+    }
+    function pmDragStart(e, chip, idx, name) {
+      if (e.button !== undefined && e.button !== 0) return;
+      if (pmDrag && pmDrag.active) return;
+      pmDrag = { chip, idx, name, id: e.pointerId, x0: e.clientX, y0: e.clientY, active: false, ghost: null, target: null, pending: false };
+      const move = (ev) => {
+        if (!pmDrag || ev.pointerId !== pmDrag.id) return;
+        if (!pmDrag.active) {
+          if (Math.hypot(ev.clientX - pmDrag.x0, ev.clientY - pmDrag.y0) < 8) return;
+          pmDrag.active = true;
+          try { chip.setPointerCapture(ev.pointerId); } catch (_) {}
+          const r = chip.getBoundingClientRect();
+          const g = chip.cloneNode(true);
+          g.className = 'pchip pchip-ghost';
+          g.style.width = r.width + 'px'; g.style.height = r.height + 'px';
+          pmDrag.ghost = g; pmDrag.dx = pmDrag.x0 - r.left; pmDrag.dy = pmDrag.y0 - r.top + (ev.pointerType === 'touch' ? 28 : 0); // kosketuksessa sormen yläpuolelle
+          document.body.appendChild(g);
+          chip.classList.add('dragging');
+          if (navigator.vibrate) { try { navigator.vibrate(10); } catch (_) {} }
+        }
+        ev.preventDefault();
+        pmDrag.ghost.style.transform = `translate(${ev.clientX - pmDrag.dx}px, ${ev.clientY - pmDrag.dy}px) scale(1.06)`;
+        pmSetDropTarget(pmFindTarget(ev.clientX, ev.clientY));
+      };
+      const end = (ev) => {
+        if (!pmDrag || ev.pointerId !== pmDrag.id) return;
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', end);
+        window.removeEventListener('pointercancel', end);
+        const st = pmDrag;
+        pmDrag = null;
+        if (!st.active) {
+          if (ev.type === 'pointerup' && pm && pm.list[st.idx] === st.name) { pmPointerAt = Date.now(); pmTap(st.idx); }
+          return;
+        }
+        pmPointerAt = Date.now();
+        if (st.ghost) st.ghost.remove();
+        chip.classList.remove('dragging');
+        pmSetDropTarget(null, st);
+        const t = ev.type === 'pointerup' ? pmFindTarget(ev.clientX, ev.clientY) : null;
+        if (t && pm && pm.list[st.idx] === st.name) pmApplyDrop(st.idx, t);
+        lastRenderSig = null;
+        renderEventView();
+      };
+      window.addEventListener('pointermove', move, { passive: false });
+      window.addEventListener('pointerup', end);
+      window.addEventListener('pointercancel', end);
+    }
+    function pmFindTarget(x, y) {
+      const elAt = document.elementFromPoint(x, y);
+      if (!elAt) return null;
+      const chip = elAt.closest('.pchip:not(.pchip-ghost)');
+      if (chip && chip.dataset.idx !== undefined) return { kind: 'chip', idx: +chip.dataset.idx, node: chip };
+      const box = elAt.closest('.pm-court');
+      if (box && box.dataset.end !== undefined) return { kind: 'court', ci: +box.dataset.ci, start: +box.dataset.start, end: +box.dataset.end, node: box };
+      return null;
+    }
+    function pmSetDropTarget(t, st = pmDrag) {
+      const prev = st && st.target;
+      if (prev && (!t || prev.node !== t.node)) prev.node.classList.remove('drop');
+      if (t && st && ((t.kind === 'chip' && t.idx === st.idx) || (t.kind === 'court' && st.idx >= t.start && st.idx < t.end))) t = null;
+      if (t) t.node.classList.add('drop');
+      if (st) st.target = t;
+    }
+    function pmApplyDrop(from, t) {
+      const list = pm.list;
+      const name = list[from];
+      if (t.kind === 'chip') {
+        if (t.idx === from) return;
+        const other = list[t.idx];
+        [list[from], list[t.idx]] = [other, name];
+        pm.sel = null;
+        showToast(`${name} ⇄ ${other}`);
+      } else {
+        // kentän viimeiseksi; jos pelaaja on jo tällä kentällä, ei muutosta
+        if (from >= t.start && from < t.end) return;
+        list.splice(from, 1);
+        list.splice(t.end - 1, 0, name);
+        pm.sel = null;
+        showToast(t.ci >= 0 ? `${name} siirretty kentälle ${t.ci + 1}` : `${name} siirretty`);
+      }
     }
     function pmDirty() { return !!pm && JSON.stringify(pm.list) !== JSON.stringify(pm.base); }
 
