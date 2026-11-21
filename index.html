@@ -1,7 +1,14 @@
 <!DOCTYPE html>
 <!--
   3 Erää - Turnausjärjestelmä
-  Versio: 4.2.0
+  Versio: 4.3.0
+
+  v4.3: Hallinnassa voi muokata pelaajan nimeä (Hallinta → Pelaajan nimi, tai Pelaajat-näkymässä valitun
+        pelaajan "Muokkaa nimeä"). Nimi vaihtuu kaikkialle historiaa myöten, ja pelaajan omalla laitteella
+        valinta seuraa uuteen nimeen.
+        Suuri zoom / kapea näyttö: otsikot lyhenevät (Erä 1 → E1, Kenttä 1 → K1), pelaajien nimet näkyvät
+        aina kokonaan (rivittyvät, ei katkaisua), sijoitustaulukossa nimi omalla rivillään ja luvut sen alla.
+        Jos sisältö ei mahdu näytölle, näkymä vierii eikä elementtejä rutisteta.
 
   v4.2: Järjestäjän Pelaajat-näkymässä pelaajia voi raahata kentältä toiselle (hiiri ja kosketus).
         Pudotus toisen pelaajan päälle vaihtaa paikat; pudotus kentän tyhjään kohtaan siirtää
@@ -142,10 +149,13 @@
     .local-banner { flex: 0 0 auto; background: var(--warn-soft); color: var(--warn); font-size: 0.72rem; font-weight: 700; text-align: center; padding: 3px 8px; }
 
     .main { flex: 1 1 auto; min-height: 0; position: relative; overflow: hidden; }
-    .view { position: absolute; inset: 0; display: flex; flex-direction: column; padding: 12px 14px; gap: 10px; min-height: 0; }
-    .pane { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; }
+    .view { position: absolute; inset: 0; display: flex; flex-direction: column; padding: 12px 14px; gap: 10px; min-height: 0; overflow-x: hidden; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+    /* Jos sisältö ei mahdu (esim. suuri zoom), näkymä vierii – elementtejä ei rutisteta. */
+    .view > * { flex-shrink: 0; }
+    .pane { flex: 1 0 auto; min-height: 0; display: flex; flex-direction: column; gap: 10px; }
     .grow { flex: 1 1 auto; min-height: 0; }
     .scroll-y { overflow-y: auto; -webkit-overflow-scrolling: touch; }
+    .view > .grow.scroll-y { flex: 1 1 0; min-height: 8rem; }
 
     .bottom-nav {
       flex: 0 0 auto; display: flex; background: var(--surface); border-top: 1px solid var(--border);
@@ -156,6 +166,7 @@
       align-items: center; justify-content: center; gap: 3px; font-size: 0.72rem; font-weight: 600; color: var(--text-muted); cursor: pointer; position: relative; padding: 0;
     }
     .nav-item .ic { width: 24px; height: 24px; }
+    .nav-item > span:not(.badge) { font-size: min(1em, 3.3vw); white-space: nowrap; }
     .nav-item.active { color: var(--primary); }
     .nav-item.active::before { content: ""; position: absolute; top: 0; left: 28%; right: 28%; height: 3px; border-radius: 0 0 3px 3px; background: var(--primary); }
     .nav-item .badge { position: absolute; top: 7px; left: calc(50% + 8px); min-width: 17px; height: 17px; padding: 0 4px; border-radius: 9px; background: var(--danger); color: #fff; font-size: 0.66rem; line-height: 17px; font-weight: 800; }
@@ -194,6 +205,8 @@
     .btn.success { background: var(--win); color: #fff; }
     .btn-row { display: flex; gap: 8px; }
     .btn-row > .btn { flex: 1; }
+    .btn-row.wrap, .compact .btn-row { flex-wrap: wrap; }
+    .btn-row.wrap > .btn, .compact .btn-row > .btn { flex: 1 1 auto; width: auto; }
 
     .field { width: 100%; min-height: 50px; padding: 12px 14px; border-radius: 13px; border: 1.5px solid var(--border-strong); background: var(--surface); font-size: 1rem; outline: none; }
     .field:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
@@ -249,15 +262,15 @@
     .steps { display: flex; gap: 6px; }
     .steps i { flex: 1; height: 4px; border-radius: 2px; background: var(--surface-3); }
     .steps i.on { background: var(--primary); }
-    .count-badge { font-size: 0.78rem; font-weight: 800; padding: 3px 9px; border-radius: 8px; background: var(--surface-2); color: var(--text-muted); }
+    .count-badge { white-space: nowrap; font-size: 0.78rem; font-weight: 800; padding: 3px 9px; border-radius: 8px; background: var(--surface-2); color: var(--text-muted); }
     .count-badge.ok { background: var(--win-soft); color: var(--win); }
     .count-badge.bad { background: var(--loss-soft); color: var(--loss); }
     .toggle-line { display: flex; gap: 12px; align-items: center; padding: 10px 12px; background: var(--surface-2); border-radius: 13px; cursor: pointer; }
     .toggle-line input { width: 22px; height: 22px; accent-color: var(--primary); flex: 0 0 auto; }
 
     /* Nimivalinta (ruudukko) */
-    .name-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; align-content: start; }
-    .name-btn { min-height: 44px; border-radius: 12px; border: 1.5px solid var(--border-strong); background: var(--surface); font-weight: 700; font-size: 0.9rem; cursor: pointer; padding: 4px 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .name-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 6em), 1fr)); gap: 6px; align-content: start; }
+    .name-btn { min-height: 44px; border-radius: 12px; border: 1.5px solid var(--border-strong); background: var(--surface); font-weight: 700; font-size: 0.9rem; cursor: pointer; padding: 4px 6px; overflow-wrap: break-word; line-height: 1.2; }
     .name-btn.on { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
     .name-btn.alt { border-style: dashed; color: var(--text-muted); }
     .group-label { font-size: 0.72rem; font-weight: 800; color: var(--text-muted); text-transform: uppercase; letter-spacing: .06em; margin: 8px 0 4px; }
@@ -276,17 +289,19 @@
     .banner.rest { background: var(--rest-soft); color: var(--rest); }
     .banner.ok { background: var(--win-soft); color: var(--win); }
 
-    .match { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; justify-content: center; gap: 8px; }
+    .match { flex: 1 0 auto; min-height: 0; display: flex; flex-direction: column; justify-content: center; gap: 8px; }
     .sheet .match { flex: 0 0 auto; }
     .sheet .match .team { flex: 0 0 auto; min-height: 92px; }
     .team {
-      flex: 1 1 0; min-height: 0; max-height: 190px; display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+      flex: 1 0 auto; min-height: 0; max-height: none; display: flex; align-items: center; gap: 10px; padding: 10px 12px;
       border-radius: var(--radius); background: var(--surface); border: 1.5px solid var(--border);
     }
     .team.mine { border-color: var(--primary); background: var(--primary-soft); }
     .team.won { border-color: var(--win); }
-    .team .t-names { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-    .team .t-names b { font-size: 1.15rem; font-weight: 800; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .team { flex-wrap: wrap; }
+    .team .t-names { flex: 1 1 0; min-width: auto; max-width: 100%; display: flex; flex-direction: column; gap: 1px; }
+    .team .stepper, .team .t-score { margin-left: auto; }
+    .team .t-names b { font-size: 1.15rem; font-weight: 800; line-height: 1.2; overflow-wrap: break-word; }
     .team .t-tag { font-size: 0.7rem; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: var(--primary); }
     .team .t-score { font-size: 2.6rem; font-weight: 900; font-variant-numeric: tabular-nums; min-width: 1.4em; text-align: right; line-height: 1; }
     .vs { text-align: center; font-size: 0.72rem; font-weight: 800; color: var(--text-faint); letter-spacing: .12em; flex: 0 0 auto; margin: -2px 0; }
@@ -307,35 +322,36 @@
     .hint { font-size: 0.82rem; color: var(--text-muted); text-align: center; min-height: 1.1em; flex: 0 0 auto; margin: 0; }
     .hint.err { color: var(--danger); font-weight: 650; }
 
-    .summary-big { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; text-align: center; flex: 1; min-height: 0; }
+    .summary-big { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; text-align: center; flex: 1 0 auto; min-height: 0; }
     .summary-big .ring { width: 74px; height: 74px; border-radius: 50%; background: var(--win-soft); color: var(--win); display: flex; align-items: center; justify-content: center; }
     .summary-big .ring .ic { width: 38px; height: 38px; stroke-width: 2.6; }
     .summary-big.rest .ring { background: var(--rest-soft); color: var(--rest); }
     .mini-games { display: flex; flex-direction: column; gap: 6px; width: 100%; }
     .mini-game { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 12px; background: var(--surface-2); font-size: 0.86rem; text-align: left; border: 0; width: 100%; cursor: pointer; }
     .mini-game .mg-e { font-weight: 800; color: var(--text-muted); width: 2.2em; flex: 0 0 auto; }
-    .mini-game .mg-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .mini-game .mg-s { font-weight: 850; font-variant-numeric: tabular-nums; }
-    .stat-trio { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; width: 100%; }
+    .mini-game .mg-t { flex: 1; min-width: 0; overflow-wrap: break-word; }
+    .mini-game .mg-s { font-weight: 850; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .stat-trio { display: flex; flex-wrap: wrap; gap: 8px; width: 100%; }
+    .stat-trio > .stat { flex: 1 1 0; min-width: max-content; }
     .stat { background: var(--surface-2); border-radius: 13px; padding: 9px 6px; text-align: center; }
-    .stat b { display: block; font-size: 1.3rem; font-weight: 900; line-height: 1.15; }
+    .stat b { display: block; font-size: 1.3rem; font-weight: 900; line-height: 1.15; white-space: nowrap; }
     .stat span { font-size: 0.7rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
 
     /* ===== Kenttäruudukko ===== */
-    .court-grid { flex: 1 1 auto; min-height: 0; display: grid; gap: 8px; grid-auto-rows: minmax(0, 1fr); }
+    .court-grid { flex: 1 0 auto; min-height: 0; display: grid; gap: 8px; grid-auto-rows: minmax(min-content, 1fr); }
     .tile {
-      min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 4px; padding: 10px 11px; border-radius: var(--radius);
+      min-height: 0; min-width: 0; display: flex; flex-direction: column; gap: 4px; padding: 10px 11px; border-radius: var(--radius);
       background: var(--surface); border: 1.5px solid var(--border); text-align: left; cursor: pointer; box-shadow: var(--shadow); width: 100%;
     }
     .tile:active { transform: scale(0.985); }
     .tile.mine { border-color: var(--primary); }
     .tile.done { background: var(--win-soft); border-color: transparent; }
     .tile .tl-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
-    .tile .tl-no { font-weight: 900; font-size: 1.05rem; }
-    .tile .tl-body { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: center; gap: 1px; font-size: 0.82rem; line-height: 1.25; overflow: hidden; }
-    .tile .tl-body .tm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 650; }
+    .tile .tl-no { font-weight: 900; font-size: 1.05rem; white-space: nowrap; }
+    .tile .tl-body { flex: 1 0 auto; display: flex; flex-direction: column; justify-content: center; gap: 1px; font-size: 0.82rem; line-height: 1.25; }
+    .tile .tl-body .tm { overflow-wrap: break-word; font-weight: 650; }
     .tile .tl-body .tv { font-size: 0.66rem; color: var(--text-faint); font-weight: 800; letter-spacing: .1em; }
-    .tile .tl-foot { font-size: 0.72rem; color: var(--text-muted); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tile .tl-foot { font-size: 0.72rem; color: var(--text-muted); font-weight: 700; overflow-wrap: break-word; }
     .tile.done .tl-foot { color: var(--win); }
 
     .status-card { display: flex; align-items: center; gap: 14px; flex: 0 0 auto; }
@@ -346,33 +362,51 @@
     .waiting-list { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
 
     /* ===== Taulukot ja listat ===== */
-    .list { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
-    .list-rows { flex: 1 1 auto; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
-    .lrow { display: grid; align-items: center; gap: 6px; padding: 0 10px; min-height: 42px; border-bottom: 1px solid var(--border); font-size: 0.9rem; flex: 0 0 auto; }
+    .list { flex: 1 0 0; min-height: 10rem; display: flex; flex-direction: column; overflow: hidden; }
+    .list-rows { flex: 1 1 auto; min-height: 0; overflow: auto; }
+    .lrow { display: grid; align-items: center; column-gap: 8px; padding: 4px 8px; min-height: 42px; border-bottom: 1px solid var(--border); font-size: 0.9rem; flex: 0 0 auto; }
     .lrow:last-child { border-bottom: 0; }
     .lrow.head { min-height: 30px; font-size: 0.68rem; font-weight: 800; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; }
     .lrow.me { background: var(--primary-soft); border-radius: 10px; border-bottom-color: transparent; }
     .lrow .pos { font-weight: 850; color: var(--text-muted); font-variant-numeric: tabular-nums; }
-    .lrow .nm { font-weight: 750; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+    .lrow .nm { font-weight: 750; min-width: 0; }
     .lrow .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .lrow.head > span { white-space: nowrap; }
     .lrow .sub { display: block; font-size: 0.72rem; color: var(--text-muted); font-weight: 600; }
     .lrow .num .sub, .stat small { font-size: 0.66rem; }
     .stat small { display: block; color: var(--text-muted); font-weight: 700; }
-    .g-court { grid-template-columns: 1.4em minmax(0,1fr) 3.2em 3.6em 4.3em; }
-    .g-all { grid-template-columns: 1.7em minmax(0,1fr) 2.2em 3.5em 3.6em; }
-    .g-hist { grid-template-columns: 2.6em minmax(0,1fr) 4.6em 3.6em; }
+    /* Sarakeleveydet rem-yksiköissä, jotta otsikko- ja datarivit linjautuvat. Nimi rivittyy tarvittaessa. */
+    .g-court { grid-template-columns: 1.3rem minmax(0,1fr) 3rem 3.1rem 2.7rem; }
+    .g-all { grid-template-columns: 1.6rem minmax(0,1fr) 1.7rem 3rem 3.1rem; }
+    .g-rate { grid-template-columns: 1.6rem minmax(0,1fr) 2.6rem 3rem 2.6rem; }
+    .g-hist { grid-template-columns: 1.8rem minmax(0,1fr) 3rem 2.7rem; }
+    .lrow .nm, .lrow .nm .sub { overflow-wrap: break-word; }
+    /* Tiivis tila: nimi omalle rivilleen koko leveydelle, luvut sen alle omiin sarakkeisiinsa. */
+    .compact .lrow:not(.head) { row-gap: 0; }
+    .compact .lrow:not(.head) > .pos { grid-row: 1 / span 2; }
+    .compact .lrow:not(.head) > .nm { grid-column: 2 / -1; grid-row: 1; }
+    .compact .lrow:not(.head) > .num { grid-row: 2; }
+    .compact .lrow > .num:nth-child(3) { grid-column: 3; }
+    .compact .lrow > .num:nth-child(4) { grid-column: 4; }
+    .compact .lrow > .num:nth-child(5) { grid-column: 5; }
+    .compact .view { padding-left: 10px; padding-right: 10px; }
+    .compact .lrow { column-gap: 6px; padding: 4px 6px; }
+    .compact .lrow .num { font-size: 0.9em; }
+    .compact .lg { display: none; }
+    .lrow .sub.hc { display: none; }
+    .compact .lrow .sub.hc { display: block; }
     .pager { display: flex; align-items: center; justify-content: center; gap: 10px; flex: 0 0 auto; padding-top: 6px; }
     .pager .pg { font-size: 0.8rem; font-weight: 750; color: var(--text-muted); min-width: 4em; text-align: center; }
     .pager .icon-btn { width: 40px; height: 36px; background: var(--surface-2); }
     .pager .icon-btn:disabled { opacity: .35; }
 
     /* ===== Pelaajat (järjestäjä) ===== */
-    .pm-grid { flex: 1 1 auto; min-height: 0; display: grid; gap: 8px; grid-auto-rows: minmax(0, 1fr); }
-    .pm-court { min-height: 0; overflow: hidden; border-radius: var(--radius); background: var(--surface); border: 1.5px solid var(--border); padding: 7px 8px; display: flex; flex-direction: column; gap: 4px; }
+    .pm-grid { flex: 1 0 auto; min-height: 0; display: grid; gap: 8px; grid-auto-rows: minmax(min-content, 1fr); }
+    .pm-court { min-height: 0; min-width: 0; border-radius: var(--radius); background: var(--surface); border: 1.5px solid var(--border); padding: 7px 8px; display: flex; flex-direction: column; gap: 4px; }
     .pm-court.reset { border-color: var(--warn-border); background: var(--warn-soft); }
     .pm-court .pm-h { display: flex; align-items: center; justify-content: space-between; gap: 4px; font-weight: 850; font-size: 0.85rem; }
-    .pm-chips { display: flex; flex-wrap: wrap; gap: 4px; align-content: flex-start; min-height: 0; overflow: hidden; }
-    .pchip { min-height: 30px; padding: 0 10px; border-radius: 10px; border: 1.5px solid var(--border-strong); background: var(--surface-2); font-weight: 700; font-size: 0.82rem; cursor: pointer; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pm-chips { display: flex; flex-wrap: wrap; gap: 4px; align-content: flex-start; }
+    .pchip { min-height: 30px; padding: 0 10px; border-radius: 10px; border: 1.5px solid var(--border-strong); background: var(--surface-2); font-weight: 700; font-size: 0.82rem; cursor: pointer; max-width: 100%; overflow-wrap: break-word; text-align: left; line-height: 1.2; padding-top: 3px; padding-bottom: 3px; }
     .pchip.sel { background: var(--primary); color: var(--on-primary); border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
     .pchip.new { border-style: dashed; border-color: var(--win); }
     .pchip.target { border-color: var(--primary); }
@@ -384,8 +418,11 @@
     .action-bar { flex: 0 0 auto; display: flex; flex-direction: column; gap: 6px; }
 
     /* ===== Hallinta ===== */
-    .launch { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; grid-auto-rows: minmax(0, 1fr); }
-    .launch-btn { min-height: 0; border-radius: var(--radius); border: 1.5px solid var(--border); background: var(--surface); display: flex; flex-direction: column; align-items: flex-start; justify-content: space-between; padding: 12px; gap: 6px; cursor: pointer; text-align: left; box-shadow: var(--shadow); overflow: hidden; }
+    .launch { flex: 1 0 auto; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; grid-auto-rows: minmax(min-content, 1fr); }
+    .launch-btn { min-height: 0; border-radius: var(--radius); border: 1.5px solid var(--border); background: var(--surface); display: flex; flex-direction: column; align-items: flex-start; justify-content: space-between; padding: 12px; gap: 6px; cursor: pointer; text-align: left; box-shadow: var(--shadow); min-width: 0; overflow-wrap: break-word; }
+    .compact .launch { grid-template-columns: 1fr; }
+    .compact .launch-btn { flex-direction: row; align-items: center; justify-content: flex-start; padding: 10px 12px; }
+    .compact .launch-btn .lb-ic { flex: 0 0 auto; }
     .launch-btn .lb-ic { width: 40px; height: 40px; border-radius: 12px; background: var(--primary-soft); color: var(--primary); display: flex; align-items: center; justify-content: center; }
     .launch-btn .lb-ic .ic { width: 22px; height: 22px; }
     .launch-btn b { font-size: 0.95rem; font-weight: 800; }
@@ -393,18 +430,20 @@
     .launch-btn.danger .lb-ic { background: var(--danger-soft); color: var(--danger); }
     .launch-btn.warn .lb-ic { background: var(--warn-soft); color: var(--warn); }
     .launch-btn:active { transform: scale(0.98); }
-    .codes-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; flex: 0 0 auto; }
+    .codes-row { display: flex; flex-wrap: wrap; gap: 8px; flex: 0 0 auto; }
+    .codes-row > .code-box { flex: 1 1 0; min-width: max-content; }
     .code-box { border-radius: var(--radius); padding: 10px 12px; background: var(--surface); border: 1.5px solid var(--border); cursor: pointer; text-align: left; }
     .code-box.org { background: var(--warn-soft); border-color: var(--warn-border); }
     .code-box .cv { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 1.45rem; font-weight: 900; letter-spacing: .14em; }
     .code-box.org .cv, .code-box.org .label { color: var(--warn); }
 
     /* ===== Siirrot ===== */
-    .mv-grid { flex: 1 1 auto; min-height: 0; display: grid; gap: 8px; grid-auto-rows: minmax(0, 1fr); }
-    .mv-court { min-height: 0; overflow: hidden; border-radius: var(--radius); background: var(--surface); border: 1.5px solid var(--border); padding: 8px 10px; display: flex; flex-direction: column; gap: 2px; }
+    .mv-grid { flex: 1 0 auto; min-height: 0; display: grid; gap: 8px; grid-auto-rows: minmax(min-content, 1fr); }
+    .mv-court { min-height: 0; min-width: 0; border-radius: var(--radius); background: var(--surface); border: 1.5px solid var(--border); padding: 8px 10px; display: flex; flex-direction: column; gap: 2px; }
     .mv-court .mv-h { font-weight: 900; font-size: 0.9rem; margin-bottom: 2px; display: flex; justify-content: space-between; }
-    .mv-p { display: flex; justify-content: space-between; gap: 6px; font-size: 0.84rem; line-height: 1.35; }
-    .mv-p b { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+    .mv-p { display: flex; flex-wrap: wrap; justify-content: space-between; column-gap: 6px; font-size: 0.84rem; line-height: 1.35; }
+    .mv-p b { font-weight: 700; overflow-wrap: break-word; min-width: auto; max-width: 100%; }
+    .mv-p > span { white-space: nowrap; margin-left: auto; }
 
     /* ===== Alalaidan paneeli (sheet) ===== */
     .sheet-wrap { position: fixed; inset: 0; z-index: 50; display: flex; flex-direction: column; justify-content: flex-end; background: rgba(8,10,20,0.45); animation: fadeIn .15s ease; }
@@ -426,9 +465,11 @@
     .erä-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 13px; background: var(--surface-2); border: 0; width: 100%; text-align: left; cursor: pointer; }
     .erä-row.done { background: var(--win-soft); }
     .erä-row.cur { outline: 2px solid var(--primary); background: var(--primary-soft); }
-    .erä-row .er-n { font-weight: 900; color: var(--text-muted); font-size: 0.72rem; width: 3.6em; flex: 0 0 auto; white-space: nowrap; }
-    .erä-row .er-t { flex: 1; min-width: 0; font-size: 0.9rem; font-weight: 650; line-height: 1.3; }
-    .erä-row .er-t div { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .erä-row .er-n { font-weight: 900; color: var(--text-muted); font-size: 0.72rem; min-width: 2.4em; flex: 0 0 auto; white-space: nowrap; }
+    .erä-row { flex-wrap: wrap; }
+    .erä-row .er-s { margin-left: auto; }
+    .erä-row .er-t { flex: 1 1 0; min-width: auto; max-width: 100%; font-size: 0.9rem; font-weight: 650; line-height: 1.3; }
+    .erä-row .er-t div { overflow-wrap: break-word; }
     .erä-row .er-s { font-size: 1.15rem; font-weight: 900; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
     .erä-row .er-s.pend { font-size: 0.8rem; color: var(--primary); font-weight: 800; }
     .qr-box { display: flex; justify-content: center; }
@@ -600,7 +641,7 @@
     };
 
     const $ = id => document.getElementById(id);
-    const APP_VERSION = '4.2.0';
+    const APP_VERSION = '4.3.0';
     const OP_TIMEOUT_MS = 12000;
     const URL_PARAMS = new URLSearchParams(window.location.search);
     const LOCAL_MODE = URL_PARAMS.get('local') === '1' ||
@@ -1269,6 +1310,47 @@
         _reset() { localStorage.removeItem(KEY); notify(); }
       };
     }
+    // Pelaajan nimen vaihto. Palauttaa muuttuvat juuritason kentät (backend.update-muodossa): nimi vaihdetaan
+    // kentistä, eristä, lepovuoroista, historiasta, sijoituksista, aloitusjärjestyksestä ja lepolaskureista.
+    // nameChanges (vanha → uusi) kertoo muille laitteille, että niiden valitsema nimi on vaihtunut.
+    function renamePlayerFields(ev, oldName, newName) {
+      const KEYED = { restCounts: 1, lastRestCycle: 1 };
+      const SKIP = { name: 1, playerCode: 1, createdAt: 1, status: 1, organizerCode: 1, nameChanges: 1, useSeedPrior: 1, seedByCourt: 1 };
+      const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+      const walk = (v) => {
+        if (typeof v === 'string') return v === oldName ? newName : v;
+        if (Array.isArray(v)) return v.map(walk);
+        if (v && typeof v === 'object') { const r = {}; Object.keys(v).forEach(k => { r[k] = walk(v[k]); }); return r; }
+        return v;
+      };
+      const out = {};
+      Object.keys(ev || {}).forEach(k => {
+        if (own(SKIP, k)) return;
+        if (own(KEYED, k)) {
+          const m = decodeMap(ev[k]);
+          if (!own(m, oldName)) return;
+          m[newName] = m[oldName]; delete m[oldName];
+          out[k] = encodeMap(m);
+          return;
+        }
+        const nv = walk(ev[k]);
+        if (JSON.stringify(nv) !== JSON.stringify(ev[k])) out[k] = nv;
+      });
+      const nc = decodeMap(ev && ev.nameChanges);
+      Object.keys(nc).forEach(k => { if (nc[k] === oldName) nc[k] = newName; });
+      nc[oldName] = newName;
+      delete nc[newName];
+      out.nameChanges = encodeMap(nc);
+      return out;
+    }
+    // Seuraa nimenvaihtoja (nameChanges) nykyiseen nimeen; null jos nimeä ei enää ole.
+    function resolveRenamedPlayer(ev, name) {
+      const names = (ev && ev.playerNames) || [];
+      const nc = decodeMap(ev && ev.nameChanges);
+      let n = name;
+      for (let i = 0; i < 20 && n && !names.includes(n); i++) n = Object.prototype.hasOwnProperty.call(nc, n) ? nc[n] : null;
+      return n && names.includes(n) ? n : null;
+    }
     // ==== PURE-LOGIC-END
 
     // ---------- Firebase-tietokanta (ladataan vain tuotantotilassa) ----------
@@ -1393,6 +1475,7 @@
       qr: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM20 14v.01M14 20h.01M17 20h4v-3"/>',
       users: '<circle cx="9" cy="8" r="3.5"/><path d="M2 20c0-3.5 3-6 7-6s7 2.5 7 6M17 4.5a3.5 3.5 0 0 1 0 7M22 20c0-2.5-1.5-4.5-4-5.5"/>',
       user: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.5-7 8-7s8 3 8 7"/>',
+      rename: '<circle cx="9" cy="8" r="4"/><path d="M2 21c0-4 3-7 7-7 1.4 0 2.6.3 3.6.9"/><path d="M18.5 13.5l2 2-5 5H13.5v-2z"/>',
       tv: '<rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8"/>',
       trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
       history: '<path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2"/>',
@@ -1653,7 +1736,19 @@
       uiScaleAdjust = adj;
       document.documentElement.style.setProperty('--text-scale', String(UI_ZOOM_BASE * (100 + adj) / 100));
       try { localStorage.setItem('APP_ui_zoom', String(adj)); } catch (e) {}
+      updateCompact();
     }
+    // Tiivis tila: näkymän leveys tekstikokoon nähden pieni (suuri zoom / kapea näyttö).
+    // Silloin otsikot lyhennetään (Erä 1 → E1, Kenttä 1 → K1) ja ruudukot kapenevat.
+    function updateCompact() {
+      const fs = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+      const c = Math.min(window.innerWidth, 640) / fs < 18;
+      document.documentElement.classList.toggle('compact', c);
+      return c;
+    }
+    function isCompact() { return document.documentElement.classList.contains('compact'); }
+    window.addEventListener('resize', updateCompact);
+    updateCompact();
 
     function showLoading(msg) { $('loadingOverlay').classList.remove('hidden'); $('loadingMessage').textContent = msg || 'Ladataan...'; }
     function hideLoading() { $('loadingOverlay').classList.add('hidden'); }
@@ -1830,9 +1925,12 @@
       }
       currentEventData = d;
       if (currentPlayerName && !(d.playerNames || []).includes(currentPlayerName)) {
-        currentPlayerName = null;
+        // Järjestäjä on voinut vaihtaa nimen: seurataan uuteen nimeen
+        const renamed = resolveRenamedPlayer(d, currentPlayerName);
+        if (renamed) showToast(`Nimesi on nyt ${renamed}`);
+        currentPlayerName = renamed;
         const e = getEventEntry(currentEventId);
-        if (e) upsertRecentEvent({ ...e, myPlayerName: null });
+        if (e) upsertRecentEvent({ ...e, myPlayerName: renamed });
       }
       renderEventView();
       refreshLiveSheets();
@@ -1929,10 +2027,11 @@
           <p id="homeErr" class="error"></p>
         </div>
         <button id="homeCreate" class="btn outline" type="button" style="flex:0 0 auto;">${icon('plus')}<span>Luo uusi tapahtuma</span></button>
-        <div class="grow col" id="homeRecentWrap" style="min-height:0;gap:6px;"></div>
+        <div class="grow col" id="homeRecentWrap" style="min-height:0;gap:6px;overflow:hidden;"></div>
         ${LOCAL_MODE ? `<div class="row" style="flex:0 0 auto;"><select id="demoCount" class="field" style="min-height:42px;padding:6px 10px;flex:1;">${[8, 9, 10, 13, 14, 16, 20].map(n => `<option value="${n}"${n === 14 ? ' selected' : ''}>Demo: ${n} pelaajaa</option>`).join('')}</select><button id="btnDemoCreate" class="btn sm ghost" type="button">Luo demo</button></div>` : ''}`;
       const wrap = $('homeRecentWrap');
       if (!list.length) {
+        wrap.style.flex = '0 0 auto';
         wrap.innerHTML = `<div class="label">Näin se toimii</div>
           <div class="mini-games">
             <div class="mini-game"><span class="mg-e">1</span><span class="mg-t">Järjestäjä luo tapahtuman ja jakaa koodin</span></div>
@@ -2204,7 +2303,7 @@
       const st = computeRoundStatus(d);
       const sub = st.completed
         ? `Kierros ${cycleCount + 1} valmis · ${st.totalEntered}/${st.total}`
-        : `Kierros ${cycleCount + 1} · Erä ${st.currentRound}/3 · ${st.totalEntered}/${st.total} tulosta`;
+        : (isCompact() ? `Kierros ${cycleCount + 1} · E${st.currentRound}/3 · ${st.totalEntered}/${st.total}` : `Kierros ${cycleCount + 1} · Erä ${st.currentRound}/3 · ${st.totalEntered}/${st.total} tulosta`);
       setTopbar(d.name || d.playerCode || 'Tapahtuma', sub, st.total ? Math.round(100 * st.totalEntered / st.total) : 0);
       $('btnShareTop').classList.toggle('hidden', currentRole !== 'organizer');
 
@@ -2212,7 +2311,7 @@
       if (!ids.includes(activeTab)) activeTab = defaultTab();
 
       const v = $('view-event');
-      const sig = JSON.stringify([d, activeTab, eventMode, currentPlayerName, currentRole, playSel, standView, standCourt, pm, [...editingRounds], pageState, currentOrganizerCode, window.innerHeight, window.innerWidth]);
+      const sig = JSON.stringify([d, activeTab, eventMode, currentPlayerName, currentRole, playSel, standView, standCourt, pm, [...editingRounds], pageState, currentOrganizerCode, window.innerHeight, window.innerWidth, updateCompact()]);
       renderNav();
       if (sig === lastRenderSig) return;
       lastRenderSig = sig;
@@ -2263,9 +2362,10 @@
       const me2 = !!currentPlayerName && pair.team2.includes(currentPlayerName);
       const wrap = el('div', 'match score-entry');
       wrap.dataset.court = court.courtIndex; wrap.dataset.round = r;
-      wrap.innerHTML = `${teamEditor(pair.team1, me1, k1, v1, me1 ? 'Sinun joukkueesi' : '')}
+      const tag = isCompact() ? 'Sinä' : 'Sinun joukkueesi';
+      wrap.innerHTML = `${teamEditor(pair.team1, me1, k1, v1, me1 ? tag : '')}
         <div class="vs">VASTAAN</div>
-        ${teamEditor(pair.team2, me2, k2, v2, me2 ? 'Sinun joukkueesi' : '')}`;
+        ${teamEditor(pair.team2, me2, k2, v2, me2 ? tag : '')}`;
       wrap.querySelectorAll('.step').forEach(b => {
         b.onclick = () => {
           const inp = b.parentNode.querySelector('input');
@@ -2399,7 +2499,7 @@
       v.appendChild(head);
       const seg = el('div', 'seg');
       [0, 1, 2].forEach(r => {
-        const b = el('button', view === r ? 'on' : '', `<span class="st ${results[r] ? 'done' : (r === target ? 'cur' : '')}"></span>Erä ${r + 1}`);
+        const b = el('button', view === r ? 'on' : '', `<span class="st ${results[r] ? 'done' : (r === target ? 'cur' : '')}"></span>${eraLabel(r)}`);
         b.type = 'button';
         b.onclick = () => { playSel = { key: selKey, view: r, manual: true }; renderEventView(); };
         seg.appendChild(b);
@@ -2428,10 +2528,11 @@
 
       if (res && !isEditing) {
         const me1 = pair.team1.includes(currentPlayerName), me2 = pair.team2.includes(currentPlayerName);
+        const tag = isCompact() ? 'Sinä' : 'Sinun joukkueesi';
         const m = el('div', 'match');
-        m.innerHTML = `${teamResult(pair.team1, me1, res.team1Score, res.team1Score > res.team2Score, me1 ? 'Sinun joukkueesi' : '')}
+        m.innerHTML = `${teamResult(pair.team1, me1, res.team1Score, res.team1Score > res.team2Score, me1 ? tag : '')}
           <div class="vs">${res.team1Score === res.team2Score ? 'TASAPELI' : 'VASTAAN'}</div>
-          ${teamResult(pair.team2, me2, res.team2Score, res.team2Score > res.team1Score, me2 ? 'Sinun joukkueesi' : '')}`;
+          ${teamResult(pair.team2, me2, res.team2Score, res.team2Score > res.team1Score, me2 ? tag : '')}`;
         v.appendChild(m);
         let verdict = '';
         if (me1 || me2) {
@@ -2442,7 +2543,7 @@
         const row = el('div', 'btn-row');
         row.style.flex = '0 0 auto';
         row.appendChild(btn('Muokkaa', 'ghost', () => { editingRounds.add(key); renderEventView(); }, 'edit'));
-        if (!allDone) row.appendChild(btn(`Erä ${target + 1}`, '', () => { playSel = { key: selKey, view: target, manual: false }; renderEventView(); }, 'right'));
+        if (!allDone) row.appendChild(btn(eraLabel(target), '', () => { playSel = { key: selKey, view: target, manual: false }; renderEventView(); }, 'right'));
         else row.appendChild(btn('Yhteenveto', '', () => { playSel = { key: selKey, view: 'sum', manual: true }; renderEventView(); }, 'trophy'));
         v.appendChild(row);
         return;
@@ -2452,7 +2553,8 @@
         // Tuleva erä: näytetään vain parit
         const me1 = pair.team1.includes(currentPlayerName), me2 = pair.team2.includes(currentPlayerName);
         const m = el('div', 'match');
-        m.innerHTML = `${teamResult(pair.team1, me1, '', false, me1 ? 'Sinun joukkueesi' : '')}<div class="vs">VASTAAN</div>${teamResult(pair.team2, me2, '', false, me2 ? 'Sinun joukkueesi' : '')}`;
+        const tag = isCompact() ? 'Sinä' : 'Sinun joukkueesi';
+        m.innerHTML = `${teamResult(pair.team1, me1, '', false, me1 ? tag : '')}<div class="vs">VASTAAN</div>${teamResult(pair.team2, me2, '', false, me2 ? tag : '')}`;
         v.appendChild(m);
         v.appendChild(el('div', 'rest-line', `Pelataan erän ${target + 1} jälkeen.${pair.resting ? ' Lepovuorossa: ' + esc(pair.resting) : ''}`));
         v.appendChild(btn(`Siirry erään ${target + 1}`, 'ghost', () => { playSel = { key: selKey, view: target, manual: false }; renderEventView(); }));
@@ -2494,7 +2596,7 @@
       box.innerHTML = `<div class="ring">${icon(done === 3 ? 'check' : 'trophy')}</div><h2>${esc(title)}</h2><div class="muted small">${esc(text)}</div>`;
       v.appendChild(box);
       const trio = el('div', 'stat-trio');
-      trio.innerHTML = `<div class="stat"><b>${myIdx >= 0 ? (myIdx + 1) + '/' + sts.length : '–'}</b><span>Sija kentällä</span></div>
+      trio.innerHTML = `<div class="stat"><b>${myIdx >= 0 ? (myIdx + 1) + '/' + sts.length : '–'}</b><span>${isCompact() ? 'Sija' : 'Sija kentällä'}</span></div>
         <div class="stat"><b>${me ? recordStr(me) : '–'}</b><span>V–T–H</span></div>
         <div class="stat"><b class="${moveCls}">${esc(moveTxt)}</b><span>Ennuste</span></div>`;
       v.appendChild(trio);
@@ -2523,7 +2625,9 @@
     }
 
     // ---------- KENTÄT / KIERROS ----------
-    function gridCols(n) { return n <= 1 ? 1 : (n <= 8 ? 2 : 3); }
+    function gridCols(n) { return n <= 1 ? 1 : (n <= 8 || isCompact() ? 2 : 3); }
+    function eraLabel(r) { return isCompact() ? `E${r + 1}` : `Erä ${r + 1}`; }
+    function courtLabel(n) { return isCompact() ? `K${n}` : `Kenttä ${n}`; }
 
     function courtTile(d, court, mine, onClick) {
       const results = courtResults(d, court);
@@ -2539,9 +2643,9 @@
       } else {
         const pair = getRoundPairing(court, target);
         body = pair ? `<div class="tm">${teamNames(pair.team1)}</div><div class="tv">VS</div><div class="tm">${teamNames(pair.team2)}</div>` : '';
-        foot = `Erä ${target + 1}${pair && pair.resting ? ' · lepo: ' + esc(pair.resting) : ''}`;
+        foot = `${eraLabel(target)}${pair && pair.resting ? ' · lepo: ' + esc(pair.resting) : ''}`;
       }
-      t.innerHTML = `<div class="tl-head"><span class="tl-no">Kenttä ${court.courtNumber}</span>${mine ? '<span class="pill primary">Sinä</span>' : dots}</div>
+      t.innerHTML = `<div class="tl-head"><span class="tl-no">${courtLabel(court.courtNumber)}</span>${mine ? '<span class="pill primary">Sinä</span>' : dots}</div>
         <div class="tl-body">${body}</div><div class="tl-foot">${mine ? dots + ' ' : ''}${foot}</div>`;
       t.onclick = onClick;
       return t;
@@ -2558,8 +2662,8 @@
         const card = el('div', 'card tight status-card');
         card.innerHTML = `<div class="ring-prog${st.completed ? ' done' : ''}" style="--p:${pct}"><span>${st.completed ? icon('check') : pct + '%'}</span></div>
           <div style="flex:1;min-width:0;"><h2>Kierros ${cycleNo(d)}</h2>
-          <div class="muted small">${st.completed ? 'Kaikki tulokset syötetty' : `Erä ${st.currentRound}/3 · ${st.totalEntered}/${st.total} tulosta`}</div>
-          ${missing.length && !st.completed ? `<div class="tiny muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Odotetaan: ${missing.join(', ')}</div>` : ''}</div>`;
+          <div class="muted small">${st.completed ? (isCompact() ? 'Kaikki syötetty' : 'Kaikki tulokset syötetty') : `${eraLabel(st.currentRound - 1)}/3 · ${st.totalEntered}/${st.total} tulosta`}</div>
+          ${missing.length && !st.completed ? `<div class="tiny muted">Odotetaan: ${missing.join(', ')}</div>` : ''}</div>`;
         v.appendChild(card);
       }
       const grid = el('div', 'court-grid');
@@ -2567,8 +2671,8 @@
       courts.forEach(c => grid.appendChild(courtTile(d, c, mc && mc.courtIndex === c.courtIndex, () => openCourtSheet(c.courtIndex))));
       v.appendChild(grid);
       if (orgMode) {
-        if (st.completed) v.appendChild(btn(`Päätä kierros ${cycleNo(d)} – näytä siirrot`, 'big success', () => { eventMode = 'moves'; renderEventView(); }, 'flag'));
-        else if (LOCAL_MODE) v.appendChild(btn('Täytä puuttuvat tulokset (testi)', 'ghost', () => fillRandomResults(), 'dice'));
+        if (st.completed) v.appendChild(btn(isCompact() ? `Päätä kierros ${cycleNo(d)}` : `Päätä kierros ${cycleNo(d)} – näytä siirrot`, 'big success', () => { eventMode = 'moves'; renderEventView(); }, 'flag'));
+        else if (LOCAL_MODE) v.appendChild(btn(isCompact() ? 'Täytä tulokset (testi)' : 'Täytä puuttuvat tulokset (testi)', 'ghost', () => fillRandomResults(), 'dice'));
       } else {
         v.appendChild(el('div', 'hint', 'Napauta kenttää nähdäksesi erät ja syöttääksesi tuloksen.'));
       }
@@ -2614,7 +2718,7 @@
             const row = el('button', 'erä-row' + (res ? ' done' : (r === target ? ' cur' : '')));
             row.type = 'button';
             const w1 = res && res.team1Score > res.team2Score, w2 = res && res.team2Score > res.team1Score;
-            row.innerHTML = `<span class="er-n">ERÄ ${r + 1}</span>
+            row.innerHTML = `<span class="er-n">${eraLabel(r).toUpperCase()}</span>
               <span class="er-t"><div${w1 ? ' class="up"' : ''}>${teamNames(pair.team1)}</div><div${w2 ? ' class="up"' : ''}>${teamNames(pair.team2)}</div>${pair.resting ? `<div class="tiny muted">Lepo: ${esc(pair.resting)}</div>` : ''}</span>
               <span class="er-s${res ? '' : ' pend'}">${res ? `${esc(res.team1Score)}–${esc(res.team2Score)}` : (canEnter ? 'Syötä ›' : 'Odottaa')}</span>`;
             if (canEnter) row.onclick = () => { if (res) editingRounds.add(`${cycle}-${court.courtIndex}-${r}`); s.state.mode = 'edit'; s.state.r = r; s.refresh(); };
@@ -2636,30 +2740,40 @@
       parent.appendChild(list);
       const headNode = head ? el('div', `lrow head ${cls}`, head) : null;
       if (headNode) rowsEl.appendChild(headNode);
-      // Mitataan rivikorkeus
-      const probe = el('div', `lrow ${cls}`, rows.length ? rows[0].html : '&nbsp;');
-      rowsEl.appendChild(probe);
-      const rh = probe.offsetHeight || 42;
-      probe.remove();
+      const mk = (r) => {
+        const n = el('div', `lrow ${cls}${r.me ? ' me' : ''}`, r.html);
+        if (r.onClick) { n.style.cursor = 'pointer'; n.onclick = r.onClick; }
+        return n;
+      };
+      // Sivutus mitattujen rivikorkeuksien mukaan (nimet voivat rivittyä, joten rivit eivät ole yhtä korkeita).
+      // Jos tila ei riitä edes yhdelle riville, lista vierii.
+      const nodes = rows.map(mk);
+      nodes.forEach(n => rowsEl.appendChild(n));
+      const hs = nodes.map(n => n.offsetHeight || 42);
       const avail = rowsEl.clientHeight - (headNode ? headNode.offsetHeight : 0);
-      let per = Math.max(3, Math.floor(avail / rh));
-      if (rows.length <= per || avail <= 0) per = Math.max(rows.length, 1);
-      else per = Math.max(3, Math.floor((avail - 44) / rh)); // sivutuspalkki vie tilaa
-      const pages = Math.max(1, Math.ceil(rows.length / per));
+      const total = hs.reduce((a, b) => a + b, 0);
+      nodes.forEach(n => n.remove());
+      let pagesIdx = [[0, rows.length]];
+      if (avail > 0 && total > avail + 1 && rows.length > 1) {
+        const lim = Math.max(1, avail - 44); // sivutuspalkki vie tilaa
+        pagesIdx = [];
+        let s0 = 0, h = 0;
+        hs.forEach((x, i) => { if (i > s0 && h + x > lim) { pagesIdx.push([s0, i]); s0 = i; h = 0; } h += x; });
+        pagesIdx.push([s0, rows.length]);
+      }
+      const pages = pagesIdx.length;
       if (pageState[key] === undefined || pageState[key] >= pages) {
         const meIdx = rows.findIndex(r => r.me);
-        pageState[key] = meIdx >= 0 ? Math.floor(meIdx / per) : 0;
+        pageState[key] = meIdx >= 0 ? pagesIdx.findIndex(([a, b]) => meIdx >= a && meIdx < b) : 0;
       }
       const draw = () => {
         Array.from(rowsEl.querySelectorAll('.lrow:not(.head)')).forEach(n => n.remove());
         const p = pageState[key];
-        rows.slice(p * per, (p + 1) * per).forEach(r => {
-          const n = el('div', `lrow ${cls}${r.me ? ' me' : ''}`, r.html);
-          if (r.onClick) { n.style.cursor = 'pointer'; n.onclick = r.onClick; }
-          rowsEl.appendChild(n);
-        });
+        const [a, b] = pagesIdx[p];
+        nodes.slice(a, b).forEach(n => rowsEl.appendChild(n));
+        rowsEl.scrollTop = 0;
         if (pages > 1) {
-          pager.innerHTML = `<button class="icon-btn" type="button" aria-label="Edellinen sivu" ${p === 0 ? 'disabled' : ''}>${icon('left')}</button><span class="pg">${p * per + 1}–${Math.min(rows.length, (p + 1) * per)} / ${rows.length}</span><button class="icon-btn" type="button" aria-label="Seuraava sivu" ${p >= pages - 1 ? 'disabled' : ''}>${icon('right')}</button>`;
+          pager.innerHTML = `<button class="icon-btn" type="button" aria-label="Edellinen sivu" ${p === 0 ? 'disabled' : ''}>${icon('left')}</button><span class="pg">${a + 1}–${b} / ${rows.length}</span><button class="icon-btn" type="button" aria-label="Seuraava sivu" ${p >= pages - 1 ? 'disabled' : ''}>${icon('right')}</button>`;
           const [prev, next] = pager.querySelectorAll('button');
           prev.onclick = () => { pageState[key] = Math.max(0, pageState[key] - 1); draw(); };
           next.onclick = () => { pageState[key] = Math.min(pages - 1, pageState[key] + 1); draw(); };
@@ -2680,8 +2794,8 @@
 
     function mvHtml(courtNum, nc) {
       if (nc === undefined || nc === null) return '<span class="stay">–</span>';
-      if (nc < courtNum) return `<span class="up">▲ K${nc}</span>`;
-      if (nc > courtNum) return `<span class="down">▼ K${nc}</span>`;
+      if (nc < courtNum) return `<span class="up">▲K${nc}</span>`;
+      if (nc > courtNum) return `<span class="down">▼K${nc}</span>`;
       return '<span class="stay">→</span>';
     }
 
@@ -2706,7 +2820,9 @@
       v.appendChild(top);
       const proj = projectedCourtMap(d);
       const startR = seedRatingMap(d);
-      const lvl = (s, bold) => `${bold ? '<b>' : ''}${ratingLabel(s.rating)}${bold ? '</b>' : ''}${startR[s.name] !== undefined ? `<span class="sub" title="Aloitustaso">alku ${ratingLabel(startR[s.name])}</span>` : ''}`;
+      const lvl = (s, bold) => `${bold ? '<b>' : ''}${ratingLabel(s.rating)}${bold ? '</b>' : ''}${startR[s.name] !== undefined ? `<span class="sub" title="Aloitustaso"><span class="lg">alku </span>${ratingLabel(startR[s.name])}</span>` : ''}`;
+      const hasStart = Object.keys(startR).length > 0;
+      const tasoHead = `<span class="num">Taso${hasStart ? '<span class="sub hc">alku</span>' : ''}</span>`;
 
       if (standView === 'court') {
         const byCourt = computeEventStandingsByCourt(d);
@@ -2724,8 +2840,8 @@
         const court = (d.courts || []).find(c => c.courtNumber === standCourt);
         const players = byCourt[standCourt] || [];
         const entered = court ? courtResults(d, court).filter(Boolean).length : 0;
-        v.appendChild(el('div', 'row between small', `<b>Kenttä ${standCourt}</b><span class="muted">${entered}/3 erää · <span class="dots">${court ? courtResults(d, court).map(x => `<i class="${x ? 'done' : ''}"></i>`).join('') : ''}</span></span>`));
-        pagedList(v, 'st-court-' + standCourt, '<span>#</span><span>Pelaaja</span><span class="num">V–T–H</span><span class="num">Taso</span><span class="num">Ennuste</span>',
+        v.appendChild(el('div', 'row between small', `<b>${courtLabel(standCourt)}</b><span class="muted">${entered}/3 erää · <span class="dots">${court ? courtResults(d, court).map(x => `<i class="${x ? 'done' : ''}"></i>`).join('') : ''}</span></span>`));
+        pagedList(v, 'st-court-' + standCourt, `<span>#</span><span>${isCompact() ? 'Nimi' : 'Pelaaja'}</span><span class="num">V–T–H</span>${tasoHead}<span class="num" title="Ennuste">Enn.</span>`,
           players.map((s, i) => ({
             me: s.name === currentPlayerName,
             html: `<span class="pos">${i + 1}</span><span class="nm">${esc(s.name)}</span><span class="num">${s.played ? recordStr(s) : '–'}</span><span class="num">${lvl(s, false)}</span><span class="num">${mvHtml(standCourt, proj ? proj[s.name] : null)}</span>`
@@ -2733,10 +2849,10 @@
       } else {
         const overall = computeOverallStandings(d);
         const restLive = computeRestCountsLive(d);
-        pagedList(v, 'st-all', '<span>#</span><span>Pelaaja</span><span class="num">Kent.</span><span class="num">V–T–H</span><span class="num">Taso</span>',
+        pagedList(v, 'st-all', `<span>#</span><span>${isCompact() ? 'Nimi' : 'Pelaaja'}</span><span class="num" title="Kenttä">K</span><span class="num">V–T–H</span>${tasoHead}`,
           overall.map((s, i) => ({
             me: s.name === currentPlayerName,
-            html: `<span class="pos">${i + 1}.</span><span class="nm">${esc(s.name)}<span class="sub">${s.played ? Math.round(s.share * 100) + ' % pisteistä' : 'ei pelejä'} · lepo ${restLive[s.name] || 0}</span></span><span class="num">${s.court ? 'K' + s.court : '–'}</span><span class="num">${s.played ? recordStr(s) : '–'}</span><span class="num">${lvl(s, true)}</span>`
+            html: `<span class="pos">${i + 1}.</span><span class="nm">${esc(s.name)}<span class="sub">${s.played ? Math.round(s.share * 100) + (isCompact() ? ' %' : ' % pisteistä') : 'ei pelejä'} · lepo ${restLive[s.name] || 0}</span></span><span class="num">${s.court ? 'K' + s.court : '–'}</span><span class="num">${s.played ? recordStr(s) : '–'}</span><span class="num">${lvl(s, true)}</span>`
           })), 'g-all');
       }
     }
@@ -2762,7 +2878,7 @@
       head.style.flex = '0 0 auto';
       const initial = currentPlayerName ? esc(currentPlayerName.slice(0, 1).toUpperCase()) : '?';
       head.innerHTML = `<div class="logo" style="width:46px;height:46px;font-size:1.2rem;border-radius:14px;margin:0;box-shadow:none;">${initial}</div>
-        <div style="flex:1;min-width:0;"><h2 style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${currentPlayerName ? esc(currentPlayerName) : 'Ei nimeä'}</h2><div class="muted small">Pelaaja · ${esc(d.playerCode || currentEventId)}</div></div>`;
+        <div style="flex:1;min-width:0;"><h2 style="overflow-wrap:break-word;">${currentPlayerName ? esc(currentPlayerName) : 'Ei nimeä'}</h2><div class="muted small">Pelaaja · ${esc(d.playerCode || currentEventId)}</div></div>`;
       const ch = btn(currentPlayerName ? 'Vaihda' : 'Valitse', 'sm ghost', () => askIdentify());
       head.appendChild(ch);
       v.appendChild(head);
@@ -2779,7 +2895,7 @@
       const rows = myCycleRows(d);
       v.appendChild(el('div', 'label', 'Päättyneet kierrokset'));
       if (!rows.length) { v.appendChild(el('div', 'empty', 'Ei vielä päättyneitä kierroksia. Historia kertyy tähän.')); }
-      else pagedList(v, 'me-hist', '<span>Kier.</span><span>Kenttä</span><span class="num">V–T–H</span><span class="num">Siirto</span>',
+      else pagedList(v, 'me-hist', `<span title="Kierros">#</span><span>Kenttä</span><span class="num">V–T–H</span><span class="num">Siirto</span>`,
         rows.map(r => ({
           html: `<span class="pos">${r.idx + 1}</span><span class="nm">Kenttä ${r.court.courtNumber}<span class="sub">${r.s && r.s.rating !== undefined ? 'taso ' + ratingLabel(r.s.rating) : ''}</span></span><span class="num">${r.s ? recordStr(r.s) : '–'}</span><span class="num">${mvHtml(r.court.courtNumber, r.nc)}</span>`,
           onClick: () => openMyCycleSheet(r)
@@ -2798,11 +2914,11 @@
           (r.court.rounds || []).forEach((pair, rIdx) => {
             const res = r.cycle.rounds?.[rIdx]?.results?.[r.court.courtIndex];
             const row = el('div', 'erä-row' + (res ? ' done' : ''));
-            if (pair.resting === currentPlayerName) { row.innerHTML = `<span class="er-n">ERÄ ${rIdx + 1}</span><span class="er-t">Lepovuoro</span><span class="pill rest">Lepo</span>`; s.body.appendChild(row); return; }
+            if (pair.resting === currentPlayerName) { row.innerHTML = `<span class="er-n">${eraLabel(rIdx).toUpperCase()}</span><span class="er-t">Lepovuoro</span><span class="pill rest">Lepo</span>`; s.body.appendChild(row); return; }
             const inT1 = pair.team1.includes(currentPlayerName);
             let sc = '–';
             if (res) { const ms = inT1 ? res.team1Score : res.team2Score, os = inT1 ? res.team2Score : res.team1Score; sc = `<span class="${ms > os ? 'up' : (ms < os ? 'down' : 'stay')}">${esc(ms)}–${esc(os)}</span>`; }
-            row.innerHTML = `<span class="er-n">ERÄ ${rIdx + 1}</span><span class="er-t"><div>${teamNames(inT1 ? pair.team1 : pair.team2)}</div><div class="muted">vs ${teamNames(inT1 ? pair.team2 : pair.team1)}</div></span><span class="er-s">${sc}</span>`;
+            row.innerHTML = `<span class="er-n">${eraLabel(rIdx).toUpperCase()}</span><span class="er-t"><div>${teamNames(inT1 ? pair.team1 : pair.team2)}</div><div class="muted">vs ${teamNames(inT1 ? pair.team2 : pair.team1)}</div></span><span class="er-s">${sc}</span>`;
             s.body.appendChild(row);
           });
           s.body.appendChild(el('div', 'row between small', `<span class="muted">Siirto seuraavalle kierrokselle</span>${mvHtml(r.court.courtNumber, r.nc)}`));
@@ -2845,7 +2961,7 @@
         const box = el('div', 'pm-court' + (resetSet.has(g.ci + 1) ? ' reset' : ''));
         box.dataset.ci = g.ci; box.dataset.start = g.start; box.dataset.end = g.start + g.names.length;
         const hadRes = g.ci >= 0 && [0, 1, 2].some(r => getCourtResult(d, r, g.ci));
-        box.innerHTML = `<div class="pm-h"><span>${g.ci >= 0 ? 'Kenttä ' + (g.ci + 1) : 'Pelaajat'}</span>${resetSet.has(g.ci + 1) ? '<span class="pill rest">nollataan</span>' : (dirty && hadRes ? '<span class="pill win">säilyy</span>' : `<span class="tiny muted">${g.names.length}</span>`)}</div>`;
+        box.innerHTML = `<div class="pm-h"><span>${g.ci >= 0 ? (groups.length <= 4 ? 'Kenttä ' + (g.ci + 1) : courtLabel(g.ci + 1)) : 'Pelaajat'}</span>${resetSet.has(g.ci + 1) ? '<span class="pill rest">nollataan</span>' : (dirty && hadRes ? '<span class="pill win">säilyy</span>' : `<span class="tiny muted">${g.names.length}</span>`)}</div>`;
         const chips = el('div', 'pm-chips');
         g.names.forEach((name, k) => {
           const idx = g.start + k;
@@ -2866,9 +2982,10 @@
       if (!sizes) bar.appendChild(el('div', 'banner down', icon('info') + `<span>Pelaajamäärä ${list.length} ei ole tuettu (4, 5, 8, 9, 10 tai 12+).</span>`));
       if (pm.sel !== null) {
         const name = list[pm.sel];
-        const row = el('div', 'btn-row');
-        row.appendChild(btn('Peru valinta', 'ghost', () => { pm.sel = null; renderEventView(); }));
-        row.appendChild(btn(`Poista ${esc(name)}`, 'danger-ghost', async () => {
+        const row = el('div', 'btn-row wrap');
+        row.appendChild(btn(isCompact() ? 'Peru' : 'Peru valinta', 'ghost', () => { pm.sel = null; renderEventView(); }));
+        row.appendChild(btn(isCompact() ? 'Nimi' : 'Muokkaa nimeä', 'ghost', () => openPlayerRenameSheet(name), 'edit'));
+        row.appendChild(btn('Poista', 'danger-ghost', async () => {
           if (!(await askConfirm(`Poistetaanko ${name} tapahtumasta?`, { ok: 'Poista', danger: true }))) return;
           list.splice(pm.sel, 1); pm.sel = null; renderEventView();
         }, 'trash'));
@@ -3035,14 +3152,15 @@
       const d = currentEventData;
       const orgCode = currentOrganizerCode || d.organizerCode || null;
       const codes = el('div', 'codes-row');
-      codes.innerHTML = `<button class="code-box" type="button" id="adP"><div class="label">Pelaajakoodi</div><div class="cv">${esc(d.playerCode)}</div><div class="tiny muted">Jaa kaikille</div></button>
-        <button class="code-box org" type="button" id="adO"><div class="label">Järjestäjäkoodi</div><div class="cv">${orgCode ? esc(orgCode) : '…'}</div><div class="tiny">Älä jaa pelaajille</div></button>`;
+      codes.innerHTML = `<button class="code-box" type="button" id="adP"><div class="label">${isCompact() ? 'Pelaajat' : 'Pelaajakoodi'}</div><div class="cv">${esc(d.playerCode)}</div><div class="tiny muted">Jaa kaikille</div></button>
+        <button class="code-box org" type="button" id="adO"><div class="label">${isCompact() ? 'Järjestäjä' : 'Järjestäjäkoodi'}</div><div class="cv">${orgCode ? esc(orgCode) : '…'}</div><div class="tiny">Älä jaa pelaajille</div></button>`;
       v.appendChild(codes);
       codes.querySelector('#adP').onclick = () => openShareSheet();
       codes.querySelector('#adO').onclick = () => { if (orgCode) openOrgCodeSheet(orgCode); };
       const tiles = [
         ['edit', 'Tapahtuman nimi', d.name || 'Ei nimeä', () => openRenameSheet()],
         ['qr', 'Jaa pelaajille', 'QR-koodi ja linkki', () => openShareSheet()],
+        ['rename', 'Pelaajan nimi', 'Korjaa pelaajan nimeä', () => openPlayerRenameSheet()],
         ['tv', 'TV-näkymä', 'Isolle näytölle vaakaan', () => {
           const url = window.location.origin + window.location.pathname + '?event=' + encodeURIComponent(currentEventId) + '&tv=1' + (LOCAL_MODE ? '&local=1' : '');
           window.open(url, '_blank', 'noopener');
@@ -3052,7 +3170,7 @@
       ];
       if (LOCAL_MODE) tiles.push(['dice', 'Täytä tulokset', 'Testi: satunnaiset tulokset', () => fillRandomResults(), 'warn']);
       tiles.push(['trash', 'Poista tapahtuma', 'Pysyvästi kaikilta laitteilta', () => deleteEvent(), 'danger']);
-      if (!LOCAL_MODE) tiles.splice(5, 0, ['logout', 'Poistu', 'Takaisin etusivulle', () => leaveEvent()]);
+      if (!LOCAL_MODE) tiles.splice(6, 0, ['logout', 'Poistu', 'Takaisin etusivulle', () => leaveEvent()]);
       const grid = el('div', 'launch');
       tiles.forEach(([ic, title, sub, fn, cls]) => {
         const b = el('button', 'launch-btn' + (cls ? ' ' + cls : ''), `<div class="lb-ic">${icon(ic)}</div><div><b>${title}</b><br><span>${esc(sub)}</span></div>`);
@@ -3085,6 +3203,89 @@
           inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); save(); } });
           const row = el('div', 'btn-row');
           row.appendChild(btn('Peruuta', 'ghost', () => s.close()));
+          const sv = btn('Tallenna', '', save, 'check');
+          row.appendChild(sv);
+          s.foot.appendChild(row);
+          setTimeout(() => { try { inp.focus(); inp.select(); } catch (e) {} }, 50);
+        }
+      });
+    }
+
+    // Pelaajan nimen muokkaus (järjestäjä). preset = valmiiksi valittu nimi.
+    function openPlayerRenameSheet(preset) {
+      if (!currentEventData) return;
+      openSheet({
+        title: 'Pelaajan nimi',
+        full: !preset && (currentEventData.playerNames || []).length > 16,
+        state: { name: preset || null },
+        render(s) {
+          const d = currentEventData;
+          const pending = pm && pmDirty() ? pm.list : null;
+          if (!s.state.name) {
+            s.body.appendChild(el('div', 'muted small', 'Valitse pelaaja, jonka nimeä haluat muokata.'));
+            const seen = new Set();
+            const group = (label, names) => {
+              if (!names.length) return;
+              s.body.appendChild(el('div', 'group-label', esc(label)));
+              const g = el('div', 'name-grid');
+              names.forEach(n => {
+                const b = el('button', 'name-btn');
+                b.type = 'button'; b.textContent = n;
+                b.onclick = () => { s.state.name = n; s.refresh(); };
+                g.appendChild(b); seen.add(n);
+              });
+              s.body.appendChild(g);
+            };
+            (d.courts || []).forEach(c => group(`Kenttä ${c.courtNumber}`, c.players || []));
+            group('Muut', (d.playerNames || []).filter(n => !seen.has(n)));
+            if (pending) group('Lisätyt (tallentamatta)', pending.filter(n => !seen.has(n)));
+            return;
+          }
+          const oldName = s.state.name;
+          s.body.innerHTML = `<div class="muted small">Nykyinen nimi: <b>${esc(oldName)}</b></div><input id="prName" class="field" type="text" maxlength="30" enterkeyhint="done" placeholder="Uusi nimi"><div class="hint" id="prErr" style="text-align:left;">Nimi vaihtuu kaikkialle: kentät, erät, sijoitus ja historia.</div>`;
+          const inp = s.body.querySelector('#prName');
+          inp.value = oldName;
+          const err = (m) => { const e = s.body.querySelector('#prErr'); e.className = 'hint err'; e.style.textAlign = 'left'; e.textContent = m; };
+          const save = async () => {
+            const newName = inp.value.trim();
+            if (newName === oldName) { s.close(); return; }
+            const ne = playerNameError(newName);
+            if (ne) return err(ne);
+            const ev = currentEventData;
+            const taken = new Set([...(ev.playerNames || []), ...(pm ? pm.list : [])]);
+            (ev.courts || []).forEach(c => (c.players || []).forEach(p => taken.add(p)));
+            (ev.previousCycles || []).forEach(pc => (pc.courts || []).forEach(c => (c.players || []).forEach(p => taken.add(p))));
+            if (taken.has(newName)) return err(`Nimi "${newName}" on jo käytössä tässä tapahtumassa.`);
+            const inEvent = (ev.playerNames || []).includes(oldName) || (ev.courts || []).some(c => (c.players || []).includes(oldName));
+            const fixPm = () => {
+              if (!pm) return;
+              pm.list = pm.list.map(n => n === oldName ? newName : n);
+              pm.base = pm.base.map(n => n === oldName ? newName : n);
+            };
+            if (!inEvent) { fixPm(); s.close(); lastRenderSig = null; renderEventView(); showToast(`${oldName} → ${newName}`); return; }
+            sv.disabled = true;
+            try {
+              const fresh = await loadEvent(currentEventId);
+              if (!fresh) throw new Error('Tapahtumaa ei löytynyt.');
+              if (!(fresh.playerNames || []).includes(oldName)) throw new Error('Pelaajaa ei enää löydy.');
+              if ((fresh.playerNames || []).includes(newName)) throw new Error(`Nimi "${newName}" on jo käytössä.`);
+              const fields = renamePlayerFields(fresh, oldName, newName);
+              await withAuthRetry(() => backend.update('events/' + currentEventId, fields), { write: true });
+              fixPm();
+              if (currentPlayerName === oldName) {
+                currentPlayerName = newName;
+                const entry = getEventEntry(currentEventId);
+                if (entry) upsertRecentEvent({ ...entry, myPlayerName: newName });
+              }
+              s.close();
+              lastRenderSig = null;
+              renderEventView();
+              showToast(`Nimi vaihdettu: ${newName}`, { type: 'success' });
+            } catch (e) { sv.disabled = false; err('Virhe: ' + e.message); }
+          };
+          inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); save(); } });
+          const row = el('div', 'btn-row');
+          row.appendChild(btn(preset ? 'Peruuta' : 'Takaisin', 'ghost', () => { if (preset) s.close(); else { s.state.name = null; s.refresh(); } }));
           const sv = btn('Tallenna', '', save, 'check');
           row.appendChild(sv);
           s.foot.appendChild(row);
@@ -3164,13 +3365,13 @@
       grid.style.gridTemplateColumns = `repeat(${gridCols(preview.length)}, minmax(0,1fr))`;
       preview.forEach(c => {
         const box = el('div', 'mv-court');
-        let h = `<div class="mv-h"><span>Kenttä ${c.courtNumber}</span>${c.players.length === 5 ? '<span class="pill rest">5P</span>' : ''}</div>`;
+        let h = `<div class="mv-h"><span>${courtLabel(c.courtNumber)}</span>${c.players.length === 5 ? '<span class="pill rest">5P</span>' : ''}</div>`;
         c.players.forEach(p => {
           const o = oldCourtOf[p];
           let badge;
           if (o === undefined) badge = '<span class="stay">uusi</span>';
-          else if (o > c.courtNumber) badge = `<span class="up">▲ K${o}</span>`;
-          else if (o < c.courtNumber) badge = `<span class="down">▼ K${o}</span>`;
+          else if (o > c.courtNumber) badge = `<span class="up">▲K${o}</span>`;
+          else if (o < c.courtNumber) badge = `<span class="down">▼K${o}</span>`;
           else badge = '<span class="stay">→</span>';
           h += `<div class="mv-p"><b>${esc(p)}</b>${badge}</div>`;
         });
@@ -3199,8 +3400,9 @@
         render(s) {
           const t = el('div', 'col');
           t.style.gap = '0';
-          t.appendChild(el('div', 'lrow head g-all', '<span>#</span><span>Pelaaja</span><span class="num">Osuus</span><span class="num">V–T–H</span><span class="num">Taso</span>'));
-          standings.forEach((x, i) => t.appendChild(el('div', 'lrow g-all', `<span class="pos">${i + 1}</span><span class="nm">${esc(x.name)}</span><span class="num">${Math.round(x.share * 100)} %</span><span class="num">${recordStr(x)}</span><span class="num"><b>${ratingLabel(x.rating)}</b></span>`)));
+          t.style.overflowX = 'auto';
+          t.appendChild(el('div', 'lrow head g-rate', `<span>#</span><span>${isCompact() ? 'Nimi' : 'Pelaaja'}</span><span class="num">${isCompact() ? '%' : 'Osuus'}</span><span class="num">V–T–H</span><span class="num">Taso</span>`));
+          standings.forEach((x, i) => t.appendChild(el('div', 'lrow g-rate', `<span class="pos">${i + 1}</span><span class="nm">${esc(x.name)}</span><span class="num">${Math.round(x.share * 100)} %</span><span class="num">${recordStr(x)}</span><span class="num"><b>${ratingLabel(x.rating)}</b></span>`)));
           s.body.appendChild(t);
         }
       });
@@ -3300,7 +3502,7 @@
             const row = el('button', 'erä-row' + (res ? ' done' : ''));
             row.type = 'button';
             const w1 = res && res.team1Score > res.team2Score, w2 = res && res.team2Score > res.team1Score;
-            row.innerHTML = `<span class="er-n">ERÄ ${rIdx + 1}</span><span class="er-t"><div${w1 ? ' class="up"' : ''}>${teamNames(pair.team1)}</div><div${w2 ? ' class="up"' : ''}>${teamNames(pair.team2)}</div>${pair.resting ? `<div class="tiny muted">Lepo: ${esc(pair.resting)}</div>` : ''}</span><span class="er-s${res ? '' : ' pend'}">${res ? `${esc(res.team1Score)}–${esc(res.team2Score)}` : 'Lisää'} <span class="faint">${icon('edit')}</span></span>`;
+            row.innerHTML = `<span class="er-n">${eraLabel(rIdx).toUpperCase()}</span><span class="er-t"><div${w1 ? ' class="up"' : ''}>${teamNames(pair.team1)}</div><div${w2 ? ' class="up"' : ''}>${teamNames(pair.team2)}</div>${pair.resting ? `<div class="tiny muted">Lepo: ${esc(pair.resting)}</div>` : ''}</span><span class="er-s${res ? '' : ' pend'}">${res ? `${esc(res.team1Score)}–${esc(res.team2Score)}` : 'Lisää'} <span class="faint">${icon('edit')}</span></span>`;
             row.onclick = () => { st.edit = key; s.refresh(); };
             s.body.appendChild(row);
           });
