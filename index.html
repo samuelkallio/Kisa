@@ -1,8 +1,11 @@
 <!DOCTYPE html>
 <!--
   3 Erää - Turnausjärjestelmä
-  Versio: 4.5.0
+  Versio: 4.6.0
 
+  v4.6: Järjestäjä voi poistaa erätuloksen erän muokkaustilassa (Kentät/Kierros, Peli-näkymä ja historia).
+        Poisto kysyy vahvistuksen ja sen voi kumota heti. Sijoitukset ja siirtoennusteet lasketaan uudelleen;
+        historian kierroksella myös tallennettu kierrossijoitus päivittyy.
   v4.5: Tuplanäpäytys ei enää zoomaa (iOS/Android), joten +/−-painikkeita voi napauttaa nopeasti peräkkäin.
         Nipistyszoomi ja sovelluksen oma tekstikoko toimivat edelleen.
   v4.4: Pelaajat-näkymässä pelaajaa voi raahata vasta, kun se on ensin valittu napauttamalla (puhelimessa
@@ -216,7 +219,9 @@
     .btn.danger-ghost { background: var(--danger-soft); color: var(--danger); }
     .btn.success { background: var(--win); color: #fff; }
     .btn-row { display: flex; gap: 8px; }
-    .btn-row > .btn { flex: 1; }
+    .btn-row > .btn { flex: 1; min-width: 0; }
+    .btn-row > .btn.icon-only, .compact .btn-row > .btn.icon-only { flex: 0 0 auto; width: auto; padding: 0 16px; }
+    .btn.icon-only > span:empty { display: none; }
     .btn-row.wrap, .compact .btn-row { flex-wrap: wrap; }
     .btn-row.wrap > .btn, .compact .btn-row > .btn { flex: 1 1 auto; width: auto; }
 
@@ -659,7 +664,7 @@
     };
 
     const $ = id => document.getElementById(id);
-    const APP_VERSION = '4.5.0';
+    const APP_VERSION = '4.6.0';
     const OP_TIMEOUT_MS = 12000;
     const URL_PARAMS = new URLSearchParams(window.location.search);
     const LOCAL_MODE = URL_PARAMS.get('local') === '1' ||
@@ -2429,6 +2434,14 @@
         const row = el('div', 'btn-row');
         const c = btn('Peruuta', 'ghost', onCancel);
         c.style.flex = '0 0 34%';
+        // Järjestäjä voi poistaa jo tallennetun erätuloksen muokkaustilassa
+        if (isEdit && currentRole === 'organizer' && getCourtResult(d, r, court.courtIndex)) {
+          const del = btn('', 'danger-ghost icon-only', () => confirmDeleteRoundResult(court, r, cycle, onDone), 'trash');
+          del.title = 'Poista erätulos';
+          c.style.flex = '0 0 auto'; c.style.width = 'auto';
+          del.setAttribute('aria-label', 'Poista erätulos');
+          row.appendChild(del);
+        }
         row.appendChild(c); row.appendChild(save);
         bar.appendChild(row);
       } else bar.appendChild(save);
@@ -2462,6 +2475,32 @@
       const data = { team1Score: s1, team2Score: s2, timestamp: new Date().toISOString() };
       await withAuthRetry(() => backend.set(`events/${currentEventId}/rounds/${roundIdx}/results/${courtIdx}`, data), { write: true });
       return true;
+    }
+
+    // Erätuloksen poisto (järjestäjä). Sijoitukset lasketaan tuloksista, joten ne päivittyvät automaattisesti.
+    async function confirmDeleteRoundResult(court, r, cycle, onDone) {
+      const cur = getCourtResult(currentEventData, r, court.courtIndex);
+      if (!cur) return;
+      const ok = await askConfirm(`Poistetaanko kentän ${court.courtNumber} erän ${r + 1} tulos ${cur.team1Score}–${cur.team2Score}?\n\nErä palaa syötettäväksi, ja sijoitukset sekä siirtoennusteet lasketaan uudelleen.`,
+        { ok: 'Poista tulos', danger: true, title: 'Poista erätulos' });
+      if (!ok) return;
+      try {
+        await deleteRoundResult(court.courtIndex, r, cycle);
+        const key = `${cycle}-${court.courtIndex}-${r}`;
+        editingRounds.delete(key);
+        scoreDrafts.delete(`c-${key}-1`); scoreDrafts.delete(`c-${key}-2`);
+        showToast(`Erän ${r + 1} tulos poistettu`, { action: { label: 'Kumoa', fn: () => undoResult(court.courtIndex, r, cur, cur.team1Score, cur.team2Score, cycle) } });
+        if (onDone) onDone();
+        lastRenderSig = null;
+        renderEventView();
+      } catch (e) { notify('Poisto epäonnistui: ' + (e.message || e)); }
+    }
+
+    async function deleteRoundResult(courtIdx, roundIdx, cycleAtRender) {
+      if (!LOCAL_MODE && connState === 'off') throw new Error('Ei verkkoyhteyttä – tulosta ei poistettu. Yritä uudelleen, kun yhteys palaa.');
+      const liveCycle = (currentEventData?.previousCycles || []).length;
+      if (cycleAtRender !== liveCycle) throw new Error('Kierros on vaihtunut. Tulosta ei poistettu.');
+      await withAuthRetry(() => backend.remove(`events/${currentEventId}/rounds/${roundIdx}/results/${courtIdx}`), { write: true });
     }
 
     async function undoResult(cIdx, r, prev, s1, s2, cycle) {
@@ -3526,10 +3565,28 @@
               const v1 = scoreDrafts.has(k1) ? scoreDrafts.get(k1) : (res?.team1Score ?? '');
               const v2 = scoreDrafts.has(k2) ? scoreDrafts.get(k2) : (res?.team2Score ?? '');
               const box = el('div', 'card tight col');
+              box.style.flex = '0 0 auto';
               box.innerHTML = `<h3>Erä ${rIdx + 1} – muokataan</h3>
                 <div class="row between"><span class="small" style="flex:1;min-width:0;">${teamNames(pair.team1)}</span><input class="score-in" type="number" min="0" max="99" inputmode="numeric" value="${esc(v1)}" data-draft="${k1}"></div>
                 <div class="row between"><span class="small" style="flex:1;min-width:0;">${teamNames(pair.team2)}</span><input class="score-in" type="number" min="0" max="99" inputmode="numeric" value="${esc(v2)}" data-draft="${k2}"></div>`;
               const row = el('div', 'btn-row');
+              if (res) {
+                const del = btn('', 'danger-ghost icon-only', async () => {
+                  const ok = await askConfirm(`Poistetaanko kierroksen ${st.cyc + 1} kentän ${court.courtNumber} erän ${rIdx + 1} tulos ${res.team1Score}–${res.team2Score}?\n\nKierroksen sijoitukset lasketaan uudelleen. Jo tehdyt siirrot eivät muutu.`,
+                    { ok: 'Poista tulos', danger: true, title: 'Poista erätulos' });
+                  if (!ok) return;
+                  del.disabled = true;
+                  try {
+                    await saveHistoryResult(st.cyc, court.courtIndex, rIdx, null, null);
+                    st.edit = null; scoreDrafts.delete(k1); scoreDrafts.delete(k2);
+                    showToast('Historian tulos poistettu', { type: 'success' });
+                    s.refresh();
+                  } catch (e) { del.disabled = false; notify('Virhe: ' + e.message); }
+                }, 'trash');
+                del.title = 'Poista erätulos';
+                del.setAttribute('aria-label', 'Poista erätulos');
+                row.appendChild(del);
+              }
               row.appendChild(btn('Peruuta', 'ghost', () => { st.edit = null; scoreDrafts.delete(k1); scoreDrafts.delete(k2); s.refresh(); }));
               const sv = btn('Tallenna', '', async () => {
                 const ins = box.querySelectorAll('input');
@@ -3560,7 +3617,7 @@
           const nextOf = {};
           next.forEach(c => (c.players || []).forEach(p => { nextOf[p] = c.courtNumber; }));
           const mv = el('div', 'card tight col');
-          mv.style.gap = '2px';
+          mv.style.gap = '2px'; mv.style.flex = '0 0 auto';
           const startR = seedRatingMap(d);
           mv.innerHTML = '<div class="label">Pelaajat ja siirrot</div>' + (court.players || []).map(p => {
             const x = (cycle.standings || []).find(y => y.name === p);
@@ -3573,14 +3630,16 @@
       });
     }
 
+    // s1 === null poistaa tuloksen
     async function saveHistoryResult(cycIdx, courtIdx, rIdx, s1, s2) {
       const fresh = await loadEvent(currentEventId);
       const pc = fresh.previousCycles[cycIdx];
-      const newRes = { team1Score: s1, team2Score: s2, timestamp: new Date().toISOString() };
+      const newRes = s1 === null ? null : { team1Score: s1, team2Score: s2, timestamp: new Date().toISOString() };
       const rounds = JSON.parse(JSON.stringify(pc.rounds || []));
       if (!rounds[rIdx]) rounds[rIdx] = { roundIndex: rIdx, results: {} };
       if (!rounds[rIdx].results) rounds[rIdx].results = {};
-      rounds[rIdx].results[courtIdx] = newRes;
+      if (newRes) rounds[rIdx].results[courtIdx] = newRes;
+      else delete rounds[rIdx].results[courtIdx];
       const cycPlayers = [];
       (pc.courts || []).forEach(c => (c.players || []).forEach(p => cycPlayers.push(p)));
       const newStandings = computeStandings({ courts: pc.courts, rounds, playerNames: cycPlayers, previousCycles: (fresh.previousCycles || []).slice(0, cycIdx), seedOrder: fresh.seedOrder, useSeedPrior: fresh.useSeedPrior, seedByCourt: fresh.seedByCourt });
