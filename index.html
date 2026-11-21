@@ -1543,7 +1543,7 @@
 
     function registerSW() {
       if (LOCAL_MODE || !('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) return;
-      navigator.serviceWorker.register('sw.js').catch(() => {});
+      navigator.serviceWorker.register('sw.js?v=' + encodeURIComponent(APP_VERSION)).catch(() => {});
     }
 
     // ============================================================
