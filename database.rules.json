@@ -42,6 +42,66 @@
           ".write": "auth != null && auth.uid === $uid && (!newData.exists() || (newData.isString() && newData.val() === newData.parent().parent().parent().child('organizerSecret').child($eventId).val()))"
         }
       }
+    },
+
+    "rankings": {
+      "$rid": {
+        ".read": "auth != null",
+        ".write": "auth != null && ((!data.exists() && newData.child('id').val() === $rid && newData.parent().parent().child('rankingSecret').child($rid).exists() && newData.parent().parent().child('rankingClaims').child($rid).child(auth.uid).val() === newData.parent().parent().child('rankingSecret').child($rid).val()) || (data.exists() && root.child('rankingSecret').child($rid).exists() && root.child('rankingClaims').child($rid).child(auth.uid).val() === root.child('rankingSecret').child($rid).val()))",
+        "name": {
+          ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 40"
+        },
+        "players": {
+          "$pid": {
+            ".validate": "newData.hasChild('name')",
+            "name": {
+              ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 40"
+            }
+          }
+        },
+        "aliases": {
+          "$alias": {
+            ".validate": "newData.isString() && newData.val().length <= 40"
+          }
+        },
+        "imports": {
+          "$iid": {
+            ".validate": "newData.hasChildren(['name', 'date', 'source'])",
+            "name": {
+              ".validate": "newData.isString() && newData.val().length <= 60"
+            },
+            "date": {
+              ".validate": "newData.isString() && newData.val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/)"
+            },
+            "source": {
+              ".validate": "newData.isString() && newData.val().matches(/^(kisa|games|levels|placement)$/)"
+            }
+          }
+        }
+      }
+    },
+
+    "rankingCodes": {
+      "$code": {
+        ".read": "auth != null",
+        ".write": "auth != null && ((!data.exists() && newData.isString() && newData.parent().parent().child('rankingSecret').child(newData.val()).val() === $code && !root.child('rankings').child(newData.val()).exists()) || (data.exists() && !newData.exists() && root.child('rankingSecret').child(data.val()).val() === $code && root.child('rankingClaims').child(data.val()).child(auth.uid).val() === $code))"
+      }
+    },
+
+    "rankingSecret": {
+      "$rid": {
+        ".read": "auth != null && data.exists() && root.child('rankingClaims').child($rid).child(auth.uid).val() === data.val()",
+        ".write": "auth != null && ((!data.exists() && newData.isString() && !root.child('rankings').child($rid).exists() && newData.parent().parent().child('rankings').child($rid).child('id').val() === $rid && newData.parent().parent().child('rankingCodes').child(newData.val()).val() === $rid) || (data.exists() && !newData.exists() && root.child('rankingClaims').child($rid).child(auth.uid).val() === data.val() && !newData.parent().parent().child('rankings').child($rid).exists()))"
+      }
+    },
+
+    "rankingClaims": {
+      "$rid": {
+        "$uid": {
+          ".read": "auth != null && auth.uid === $uid",
+          ".write": "auth != null && auth.uid === $uid && (!newData.exists() || (newData.isString() && newData.val() === newData.parent().parent().parent().child('rankingSecret').child($rid).val()))"
+        }
+      }
     }
   }
 }

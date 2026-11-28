@@ -1,0 +1,1581 @@
+<!DOCTYPE html>
+<!--
+  Ranking – pysyvä pelaajaranking tapahtumien tuloksista (Kisa / 3 Erää -sovelluksen rinnakkaissivu)
+  Versio: 1.0.0
+
+  Tapahtuman tulokset tuodaan rankingiin: Kisa-tapahtuma koodilla, erätulokset CSV:nä, lopputasot tai
+  loppusijoitus. Jokainen tapahtuman nimi kohdistetaan rankingin pelaajaan (esim. "JukkaH" ja "Jukka" ->
+  "Jukka Holopainen") tai lisätään uutena; kohdistus muistetaan ehdotuksena seuraavaa tuontia varten.
+  Taso lasketaan samalla mallilla kuin Kisan tapahtumataso, mutta lähtöarvona on pelaajan ranking-taso ja
+  painona hänen varmuutensa (RANKING-LOGIC). Ranking lasketaan selaimessa aina kokonaan uudelleen
+  tallennetuista tuonneista, joten tuonnin poisto, myöhässä tuotu vanha tapahtuma tai pelaajien yhdistäminen
+  päivittää kaiken.
+
+  Tietokanta: rankings/{id} (players, aliases, imports), rankingCodes/{ylläpitäjäkoodi} -> id,
+  rankingSecret/{id} -> ylläpitäjäkoodi, rankingClaims/{id}/{uid} -> ylläpitäjäkoodi (sama malli kuin Kisan
+  järjestäjällä). Localhostissa / ?local=1 käytetään selaimen localStoragea (sama kuin Kisan testitila,
+  joten paikalliset Kisa-tapahtumat voi tuoda).
+-->
+<html lang="fi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <title>Ranking</title>
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <script>
+    (function () {
+      try {
+        var theme = localStorage.getItem('APP_ui_theme') || 'auto';
+        if (theme === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+        else if (theme === 'light') document.documentElement.setAttribute('data-theme', 'light');
+        var num = parseFloat(localStorage.getItem('APP_ui_zoom') || '0');
+        var adj = isNaN(num) ? 0 : Math.max(-30, Math.min(40, Math.round(num / 5) * 5));
+        document.documentElement.style.setProperty('--text-scale', String(1.15 * (100 + adj) / 100));
+      } catch (e) {}
+    })();
+  </script>
+  <style>
+    :root {
+      color-scheme: light dark; --text-scale: 1.15;
+      --bg: #f3f4f8; --surface: #ffffff; --surface-2: #eef0f5; --surface-3: #e3e6ee;
+      --text: #151827; --text-muted: #5d6478; --text-faint: #8a90a2;
+      --border: #e2e5ec; --border-strong: #cfd3dd;
+      --primary: #3d55f5; --primary-soft: #e9ecff; --on-primary: #ffffff;
+      --danger: #d32f2f; --danger-soft: #fdecec;
+      --win: #12813e; --win-soft: #e2f6e9; --loss: #c62828; --loss-soft: #fdeaea;
+      --warn: #8a5a00; --warn-soft: #fff3dc;
+      --shadow: 0 1px 2px rgba(16,24,40,0.06), 0 1px 3px rgba(16,24,40,0.05);
+      --shadow-lg: 0 10px 30px rgba(16,24,40,0.18);
+      --radius: 16px;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --bg: #0d0f15; --surface: #171a23; --surface-2: #1f2330; --surface-3: #2a2f3e;
+        --text: #eceef4; --text-muted: #a0a7b8; --text-faint: #6f7689;
+        --border: #272c3a; --border-strong: #363c4d;
+        --primary: #7f8cff; --primary-soft: #1d2342; --on-primary: #0d0f15;
+        --danger: #ff6b6b; --danger-soft: #3a1717;
+        --win: #6fdc98; --win-soft: #143221; --loss: #ff8080; --loss-soft: #3a1818;
+        --warn: #ffd27a; --warn-soft: #33270e;
+        --shadow: 0 1px 2px rgba(0,0,0,0.4); --shadow-lg: 0 10px 30px rgba(0,0,0,0.6);
+      }
+    }
+    :root[data-theme="dark"] {
+      --bg: #0d0f15; --surface: #171a23; --surface-2: #1f2330; --surface-3: #2a2f3e;
+      --text: #eceef4; --text-muted: #a0a7b8; --text-faint: #6f7689;
+      --border: #272c3a; --border-strong: #363c4d;
+      --primary: #7f8cff; --primary-soft: #1d2342; --on-primary: #0d0f15;
+      --danger: #ff6b6b; --danger-soft: #3a1717;
+      --win: #6fdc98; --win-soft: #143221; --loss: #ff8080; --loss-soft: #3a1818;
+      --warn: #ffd27a; --warn-soft: #33270e;
+      --shadow: 0 1px 2px rgba(0,0,0,0.4); --shadow-lg: 0 10px 30px rgba(0,0,0,0.6);
+      color-scheme: dark;
+    }
+    :root[data-theme="light"] { color-scheme: light; }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+    html { font-size: calc(14px * var(--text-scale)); -webkit-text-size-adjust: 100%; height: 100%; }
+    body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--text); line-height: 1.35;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+    .hidden { display: none !important; }
+    button { font: inherit; color: inherit; }
+    input, select, textarea { font: inherit; color: var(--text); }
+    .ic { width: 1.25em; height: 1.25em; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: 0 0 auto; }
+
+    .app { position: fixed; inset: 0; display: flex; flex-direction: column; height: 100dvh; padding-top: env(safe-area-inset-top); }
+    .topbar { flex: 0 0 52px; display: flex; align-items: center; gap: 4px; padding: 0 6px; background: var(--surface); border-bottom: 1px solid var(--border); }
+    .tb-title { flex: 1; min-width: 0; padding: 0 4px; }
+    .tb-name { font-weight: 800; font-size: 1.05rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tb-sub { font-size: 0.78rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .icon-btn { width: 44px; height: 44px; border: 0; background: transparent; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; flex: 0 0 auto; }
+    .icon-btn:active { background: var(--surface-2); }
+    .icon-btn .ic { width: 24px; height: 24px; }
+    .conn { width: 10px; height: 10px; border-radius: 50%; background: #22c55e; margin: 0 8px; flex: 0 0 auto; box-shadow: 0 0 0 3px rgba(34,197,94,.18); }
+    .conn.off { background: #ef4444; box-shadow: 0 0 0 3px rgba(239,68,68,.2); }
+    .local-banner { flex: 0 0 auto; background: var(--warn-soft); color: var(--warn); font-size: 0.72rem; font-weight: 700; text-align: center; padding: 3px 8px; }
+    .main { flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+    .view { max-width: 760px; margin: 0 auto; padding: 12px 14px 24px; display: flex; flex-direction: column; gap: 10px; }
+    .bottom-nav { flex: 0 0 auto; display: flex; background: var(--surface); border-top: 1px solid var(--border); padding-bottom: env(safe-area-inset-bottom); }
+    .nav-item { flex: 1; height: 60px; border: 0; background: transparent; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font-size: 0.72rem; font-weight: 600; color: var(--text-muted); cursor: pointer; position: relative; }
+    .nav-item .ic { width: 24px; height: 24px; }
+    .nav-item.active { color: var(--primary); }
+    .nav-item.active::before { content: ""; position: absolute; top: 0; left: 28%; right: 28%; height: 3px; border-radius: 0 0 3px 3px; background: var(--primary); }
+
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; box-shadow: var(--shadow); }
+    h1, h2, h3 { margin: 0; letter-spacing: -0.015em; }
+    h1 { font-size: 1.7rem; font-weight: 850; }
+    h2 { font-size: 1.15rem; font-weight: 800; }
+    h3 { font-size: 0.95rem; font-weight: 800; }
+    p { margin: 0; }
+    .muted { color: var(--text-muted); }
+    .faint { color: var(--text-faint); }
+    .small { font-size: 0.85rem; }
+    .tiny { font-size: 0.74rem; }
+    .row { display: flex; align-items: center; gap: 8px; }
+    .between { justify-content: space-between; }
+    .col { display: flex; flex-direction: column; gap: 8px; }
+    .wrap { flex-wrap: wrap; }
+    .label { font-size: 0.72rem; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); }
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; padding: 0 18px; border-radius: 14px; border: 0; background: var(--primary); color: var(--on-primary); font-weight: 750; font-size: 1rem; cursor: pointer; width: 100%; text-align: center; line-height: 1.15; }
+    .btn:active { transform: scale(0.98); }
+    .btn:disabled { opacity: .45; cursor: default; transform: none; }
+    .btn.sm { min-height: 38px; font-size: 0.88rem; padding: 0 12px; border-radius: 11px; width: auto; }
+    .btn.ghost { background: var(--surface-2); color: var(--text); }
+    .btn.danger { background: var(--danger); color: #fff; }
+    .btn.danger-ghost { background: var(--danger-soft); color: var(--danger); }
+    .btn-row { display: flex; gap: 8px; }
+    .btn-row > .btn { flex: 1; min-width: 0; }
+    .field { width: 100%; min-height: 46px; padding: 10px 12px; border-radius: 12px; border: 1.5px solid var(--border-strong); background: var(--surface); font-size: 1rem; outline: none; }
+    .field:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+    textarea.field { resize: vertical; line-height: 1.45; min-height: 10em; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.88rem; }
+    select.field { padding-right: 8px; }
+    .code-input { text-align: center; letter-spacing: .3em; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 800; text-transform: uppercase; font-size: 1.25rem; }
+    .error { color: var(--danger); font-size: 0.85rem; font-weight: 600; white-space: pre-line; }
+    .seg { display: flex; background: var(--surface-2); border-radius: 13px; padding: 3px; gap: 3px; flex-wrap: wrap; }
+    .seg button { flex: 1; min-height: 38px; border: 0; background: transparent; border-radius: 10px; font-weight: 700; font-size: 0.88rem; color: var(--text-muted); cursor: pointer; padding: 0 8px; white-space: nowrap; }
+    .seg button.on { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+    .chip { min-height: 34px; padding: 0 12px; border-radius: 17px; border: 1.5px solid var(--border-strong); background: var(--surface); font-weight: 700; font-size: 0.82rem; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; }
+    .chip.on { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+    .pill { display: inline-flex; align-items: center; padding: 1px 7px; border-radius: 999px; font-size: 0.7rem; font-weight: 800; background: var(--surface-2); color: var(--text-muted); white-space: nowrap; }
+    .pill.primary { background: var(--primary-soft); color: var(--primary); }
+    .pill.win { background: var(--win-soft); color: var(--win); }
+    .pill.warn { background: var(--warn-soft); color: var(--warn); }
+    .pill.loss { background: var(--loss-soft); color: var(--loss); }
+    .up { color: var(--win); font-weight: 800; }
+    .down { color: var(--loss); font-weight: 800; }
+    .stay { color: var(--text-faint); font-weight: 700; }
+    .banner { padding: 9px 12px; border-radius: 12px; font-size: 0.88rem; font-weight: 600; }
+    .banner.warn { background: var(--warn-soft); color: var(--warn); }
+    .banner.info { background: var(--primary-soft); color: var(--primary); }
+    .empty { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 10px; color: var(--text-muted); padding: 30px 16px; }
+    .big-ic { width: 64px; height: 64px; border-radius: 20px; background: var(--primary-soft); color: var(--primary); display: flex; align-items: center; justify-content: center; }
+    .big-ic .ic { width: 32px; height: 32px; }
+    .logo { width: 64px; height: 64px; border-radius: 20px; background: linear-gradient(135deg, var(--primary), #8b5cf6); color: #fff; display: flex; align-items: center; justify-content: center; box-shadow: var(--shadow-lg); }
+    .logo .ic { width: 34px; height: 34px; }
+    .hero { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px; padding: 10px 0 4px; }
+    .list-btn { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; background: var(--surface-2); cursor: pointer; border: 0; width: 100%; text-align: left; }
+    .list-btn .grow { flex: 1; min-width: 0; }
+    .ellipsis { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    /* Ranking-taulukko */
+    .rank-list { display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); }
+    .rank-row { display: grid; grid-template-columns: 2.4em 1fr auto; gap: 10px; align-items: center; padding: 10px 12px; border: 0; border-bottom: 1px solid var(--border); background: transparent; text-align: left; cursor: pointer; width: 100%; }
+    .rank-row:last-child { border-bottom: 0; }
+    .rank-row:active { background: var(--surface-2); }
+    .rank-row.dim { opacity: .62; }
+    .rk-pos { font-weight: 900; font-size: 1.1rem; color: var(--text-muted); text-align: center; font-variant-numeric: tabular-nums; }
+    .rank-row:nth-child(-n+3) .rk-pos { color: var(--primary); }
+    .rk-name { font-weight: 750; overflow-wrap: anywhere; }
+    .rk-meta { font-size: 0.76rem; color: var(--text-muted); display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 1px; }
+    .rk-val { text-align: right; font-variant-numeric: tabular-nums; }
+    .rk-val b { font-size: 1.2rem; font-weight: 850; display: block; line-height: 1.1; }
+    .rk-val span { font-size: 0.76rem; }
+
+    table.tbl { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    table.tbl th { text-align: left; font-size: 0.7rem; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); padding: 6px 6px; border-bottom: 1px solid var(--border-strong); }
+    table.tbl td { padding: 7px 6px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    table.tbl .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+    /* Nimien kohdistus */
+    .map-row { display: grid; grid-template-columns: minmax(6em, 1fr) minmax(10em, 1.6fr); gap: 6px 10px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); }
+    .map-row:last-child { border-bottom: 0; }
+    .map-src b { overflow-wrap: anywhere; }
+    .map-new { grid-column: 2; }
+    @media (max-width: 460px) { .map-row { grid-template-columns: 1fr; } .map-new { grid-column: 1; } }
+    .steps { display: flex; gap: 6px; }
+    .steps i { flex: 1; height: 4px; border-radius: 2px; background: var(--surface-3); }
+    .steps i.on { background: var(--primary); }
+
+    /* Alapaneeli ja ilmoitukset */
+    .sheet-wrap { position: fixed; inset: 0; background: rgba(10,12,20,.45); display: flex; align-items: flex-end; justify-content: center; z-index: 50; }
+    .sheet { background: var(--bg); width: 100%; max-width: 640px; max-height: 92dvh; overflow-y: auto; border-radius: 20px 20px 0 0; padding: 14px 14px calc(18px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 10px; box-shadow: var(--shadow-lg); }
+    @media (min-width: 700px) { .sheet-wrap { align-items: center; } .sheet { border-radius: 20px; } }
+    .sheet-head { display: flex; align-items: center; gap: 8px; }
+    .sheet-head h2 { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+    .toast-host { position: fixed; left: 0; right: 0; bottom: 80px; display: flex; flex-direction: column; align-items: center; gap: 6px; z-index: 60; pointer-events: none; }
+    .toast { background: #1d2130; color: #fff; padding: 10px 16px; border-radius: 12px; font-weight: 650; font-size: 0.9rem; box-shadow: var(--shadow-lg); max-width: 90vw; }
+    .toast.error { background: var(--danger); }
+    .qr svg { width: 220px; height: 220px; background: #fff; border-radius: 12px; }
+    .spark { width: 100%; height: 80px; }
+    .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(6.5em, 1fr)); gap: 8px; }
+    .stat { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 8px 10px; }
+    .stat b { display: block; font-size: 1.25rem; font-weight: 850; font-variant-numeric: tabular-nums; }
+    .loading { padding: 40px; text-align: center; color: var(--text-muted); }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <button id="btnHome" class="icon-btn" type="button" aria-label="Rankingit"></button>
+      <div class="tb-title"><div class="tb-name" id="tbName">Ranking</div><div class="tb-sub" id="tbSub"></div></div>
+      <span id="connBadge" class="conn" role="status" aria-label="Yhteys"></span>
+    </header>
+    <div id="localBanner" class="local-banner hidden">Paikallinen testitila – tiedot vain tässä selaimessa</div>
+    <main id="main" class="main"><div class="loading">Ladataan…</div></main>
+    <nav id="nav" class="bottom-nav hidden"></nav>
+  </div>
+  <div id="sheetHost"></div>
+  <div id="toastHost" class="toast-host"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
+  <script type="module">
+    const firebaseConfig = {
+      apiKey: "AIzaSyCh1kTTHGf5cgwT1ybPsTFE8LUniaKjkU8",
+      authDomain: "kisa-1a5b7.firebaseapp.com",
+      databaseURL: "https://kisa-1a5b7-default-rtdb.europe-west1.firebasedatabase.app",
+      projectId: "kisa-1a5b7",
+      storageBucket: "kisa-1a5b7.firebasestorage.app",
+      messagingSenderId: "305285451356",
+      appId: "1:305285451356:web:1073e301fca718d273a099"
+    };
+    const $ = id => document.getElementById(id);
+    const RANK_VERSION = '1.0.0';
+    const OP_TIMEOUT_MS = 12000;
+    const URL_PARAMS = new URLSearchParams(window.location.search);
+    const LOCAL_MODE = URL_PARAMS.get('local') === '1' ||
+      (URL_PARAMS.get('local') !== '0' && ['localhost', '127.0.0.1', '[::1]', ''].includes(window.location.hostname));
+    const LOCAL_LATENCY = Number(URL_PARAMS.get('latency')) || 0;
+
+    // ==== RANKING-LOGIC-START
+    // Pysyvä ranking tapahtumien tuloksista (menetelmä D). Jokaisella pelaajalla on taso mu (Kisan yksiköt,
+    // näytetään 1000 + 100 × mu) ja varmuus lambda. Tuonti kerrallaan: varmuus pienenee tauon mukaan, uudet
+    // pelaajat saavat lähtöarvon tapahtuman rankatuista pelaajista, ja tasot sovitetaan samalla logistisella
+    // mallilla kuin Kisan tapahtumataso (pistesuhde ~ joukkueiden tasojen erotus). Lähtöarvona on ranking-taso
+    // ja painona pelaajan varmuus, joten rankatut pelaajat ankkuroivat asteikon eri tapahtumien välillä.
+    // Ranking lasketaan aina kokonaan uudelleen tallennetuista tuonneista päivämääräjärjestyksessä.
+    const RANK_DEFAULTS = {
+      K: 0.35,            // sama kuin Kisan RATING_K
+      tau2: 0.01,         // varmuuden heikkeneminen viikossa (varianssin lisäys)
+      lambdaNew: 0.15,    // uuden pelaajan lähtövarmuus
+      lambdaMax: 3,       // varmuuden katto: ranking liikkuu myös vakiopelaajalla
+      levelWeight: 0.4,   // lopputasotuonnin paino (vrt. yksi erä ~0,09)
+      placeGames: 4,      // sijoitustuonti vastaa pelaajalle noin tätä erämäärää
+      provisional: 1.0,   // varmuus, jonka alla pelaaja on alustava
+      inactiveDays: 183,  // passiivinen, jos ei pelannut näin moneen päivään
+      seedC: 0.5          // aloituskenttien kvantiilikerroin (sama kuin Kisan SEED_PRIOR_C)
+    };
+    const RANK_SOURCES = { kisa: 'Kisa', games: 'Erätulokset', levels: 'Lopputasot', placement: 'Sijoitus' };
+
+    function rkParams(r) { return Object.assign({}, RANK_DEFAULTS, (r && r.params) || {}); }
+    function rkLabel(mu) { return Math.round(1000 + 100 * (mu || 0)); }
+    function esc(s) {
+      return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+    const FORBIDDEN_KEY_RE = /[%.$#\[\]\/\u0000-\u001f\u007f]/g;
+    function encKey(s) { return String(s).replace(FORBIDDEN_KEY_RE, c => '%' + c.charCodeAt(0).toString(16).padStart(2, '0')); }
+    function decKey(s) { return String(s).replace(/%([0-9a-fA-F]{2})/g, (m, h) => String.fromCharCode(parseInt(h, 16))); }
+
+    // Firebase palauttaa taulukot joskus olioina: [indeksi, arvo] -parit numerojärjestyksessä, tyhjät pois
+    function rkEntries(v) {
+      if (Array.isArray(v)) return v.map((x, i) => [i, x]).filter(e => e[1] != null);
+      if (v && typeof v === 'object') return Object.keys(v).filter(k => /^\d+$/.test(k)).sort((a, b) => a - b).map(k => [Number(k), v[k]]).filter(e => e[1] != null);
+      return [];
+    }
+    function rkArr(v) { return rkEntries(v).map(e => e[1]); }
+
+    // ---------- Nimet ----------
+    function rkNorm(s) { return String(s ?? '').normalize('NFC').trim().replace(/\s+/g, ' ').toLowerCase(); }
+    function rkCompact(s) { return rkNorm(s).replace(/[\s.\-_'’]/g, ''); }
+    function rkAliasKey(s) { return encKey(rkNorm(s)); }
+    function rkNameError(n) {
+      const s = String(n ?? '').trim();
+      if (!s) return 'Nimi on tyhjä.';
+      if (s.length > 40) return `Nimi "${s}" on liian pitkä (enintään 40 merkkiä).`;
+      if (/[\u0000-\u001f\u007f]/.test(s)) return `Nimessä "${s}" on kiellettyjä merkkejä.`;
+      return null;
+    }
+
+    // Ehdotus tapahtuman nimelle: aiempi kohdistus (alias) > sama nimi > lyhenne/etunimi (esim. "JukkaH",
+    // "Jukka", "J. Holopainen" -> "Jukka Holopainen"). Useampi osuma = ei automaattista valintaa.
+    function rkSuggest(src, players, aliases) {
+      const reg = players || {};
+      const ids = Object.keys(reg);
+      const ap = aliases && aliases[rkAliasKey(src)];
+      if (ap && reg[ap]) return { pid: ap, how: 'alias', candidates: [ap] };
+      const n = rkNorm(src), c = rkCompact(src);
+      const exact = ids.filter(id => rkNorm(reg[id].name) === n);
+      if (exact.length === 1) return { pid: exact[0], how: 'exact', candidates: exact };
+      if (exact.length > 1) return { pid: null, how: 'ambiguous', candidates: exact };
+      if (c.length < 2) return { pid: null, how: null, candidates: [] };
+      const cand = ids.filter(id => {
+        const pc = rkCompact(reg[id].name);
+        if (!pc) return false;
+        if (c.length >= 3 && pc.startsWith(c)) return true;
+        if (pc.length >= 3 && c.startsWith(pc)) return true;
+        const toks = rkNorm(reg[id].name).split(' ').map(rkCompact).filter(Boolean);
+        if (toks.length >= 2) {
+          const first = toks[0], last = toks[toks.length - 1];
+          if (c === last || c === first[0] + last || c === last + first[0] || c === last + first) return true;
+        }
+        return false;
+      });
+      if (cand.length === 1) return { pid: cand[0], how: 'fuzzy', candidates: cand };
+      return { pid: null, how: cand.length ? 'ambiguous' : null, candidates: cand };
+    }
+
+    // ---------- Tekstimuotoiset tuonnit ----------
+    function rkLines(text) { return String(text || '').split(/\r?\n/).map(l => l.trim()).filter(l => l && !l.startsWith('#')); }
+    function rkCells(line) {
+      const sep = line.includes('\t') ? '\t' : line.includes(';') ? ';' : ',';
+      return line.split(sep).map(s => s.trim()).filter(s => s !== '');
+    }
+    function rkIsNum(s) { return /^[-+]?\d+(?:[.,]\d+)?$/.test(String(s).trim()); }
+    function rkNum(s) { return Number(String(s).trim().replace(',', '.')); }
+
+    // Erätulokset: "Pelaaja 1; Pelaaja 2; Pelaaja 3; Pelaaja 4; 21; 15" (1+2 vastaan 3+4) tai kaksinpeli
+    // "Pelaaja 1; Pelaaja 2; 21; 15". Pisteet voivat olla myös yhtenä soluna "21-15". Otsikkorivi ohitetaan.
+    function rkParseGames(text) {
+      const games = [], errors = [];
+      rkLines(text).forEach((line, i) => {
+        let cells = rkCells(line);
+        const m = cells.length && cells[cells.length - 1].match(/^(\d+)\s*[-–:]\s*(\d+)$/);
+        if (m) cells = [...cells.slice(0, -1), m[1], m[2]];
+        const hasScores = cells.length >= 2 && rkIsNum(cells[cells.length - 1]) && rkIsNum(cells[cells.length - 2]);
+        if (!hasScores) { if (i > 0) errors.push(`Rivi ${i + 1}: pisteitä ei löytynyt.`); return; }
+        const names = cells.slice(0, -2), a = rkNum(cells[cells.length - 2]), b = rkNum(cells[cells.length - 1]);
+        if (a < 0 || b < 0) { errors.push(`Rivi ${i + 1}: pisteet eivät voi olla negatiivisia.`); return; }
+        if (names.length !== 2 && names.length !== 4) { errors.push(`Rivi ${i + 1}: odotettiin 2 tai 4 nimeä, löytyi ${names.length}.`); return; }
+        if (new Set(names.map(rkNorm)).size !== names.length) { errors.push(`Rivi ${i + 1}: sama nimi kahdesti.`); return; }
+        const half = names.length / 2;
+        games.push({ t1: names.slice(0, half), t2: names.slice(half), a, b });
+      });
+      return { games, errors };
+    }
+
+    // Lopputasot: "Nimi; 1043" (myös "1; Nimi; 1043" – viimeinen luku on taso)
+    function rkParseLevels(text) {
+      const levels = [], errors = [], seen = new Set();
+      rkLines(text).forEach((line, i) => {
+        const cells = rkCells(line);
+        const name = cells.find(c => !rkIsNum(c));
+        const nums = cells.filter(rkIsNum);
+        if (!name || !nums.length) { if (i > 0 || name) errors.push(`Rivi ${i + 1}: tarvitaan nimi ja luku.`); return; }
+        if (seen.has(rkNorm(name))) { errors.push(`Rivi ${i + 1}: "${name}" on jo listalla.`); return; }
+        seen.add(rkNorm(name));
+        levels.push({ name, value: rkNum(nums[nums.length - 1]) });
+      });
+      return { levels, errors };
+    }
+
+    // Loppusijoitus: nimi per rivi järjestyksessä, tai "3; Nimi" (sama sija = tasasijoitus)
+    function rkParsePlacement(text) {
+      const rows = [], errors = [], seen = new Set();
+      rkLines(text).forEach((line, i) => {
+        const cells = rkCells(line);
+        const name = cells.find(c => !rkIsNum(c));
+        const num = cells.find(rkIsNum);
+        if (!name) { errors.push(`Rivi ${i + 1}: nimi puuttuu.`); return; }
+        if (seen.has(rkNorm(name))) { errors.push(`Rivi ${i + 1}: "${name}" on jo listalla.`); return; }
+        seen.add(rkNorm(name));
+        rows.push({ name, place: num !== undefined ? rkNum(num) : null });
+      });
+      const numbered = rows.filter(r => r.place !== null).length;
+      if (numbered && numbered !== rows.length) errors.push('Anna sija joko kaikille riveille tai ei yhdellekään.');
+      const places = rows.map((r, i) => ({ name: r.name, place: numbered ? r.place : i + 1 }));
+      return { places, errors };
+    }
+
+    function rkLocalDate(iso) {
+      const d = iso ? new Date(iso) : new Date();
+      if (isNaN(d)) return rkLocalDate();
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+
+    // Kisa-tapahtuma (events/{koodi}) -> erät nimillä + aloituskentät (1. kierroksen kenttäjako)
+    function rkFromKisaEvent(ev) {
+      const games = [];
+      const add = (courts, rounds) => {
+        rkEntries(rounds).forEach(([idx, round]) => {
+          const rIdx = Number.isInteger(round.roundIndex) ? round.roundIndex : idx;
+          rkArr(courts).forEach(court => {
+            const res = round.results && round.results[court.courtIndex];
+            const pair = court.rounds && rkArr(court.rounds).find((p, i) => (Number.isInteger(p.roundIndex) ? p.roundIndex : i) === rIdx);
+            if (!res || !pair) return;
+            const a = Number(res.team1Score), b = Number(res.team2Score);
+            if (!isFinite(a) || !isFinite(b)) return;
+            games.push({ t1: rkArr(pair.team1), t2: rkArr(pair.team2), a, b });
+          });
+        });
+      };
+      const cycles = rkArr(ev && ev.previousCycles);
+      cycles.forEach(c => add(c.courts, c.rounds));
+      add(ev && ev.courts, ev && ev.rounds);
+      const firstCourts = rkArr((cycles[0] && cycles[0].courts) || (ev && ev.courts)).slice().sort((a, b) => a.courtNumber - b.courtNumber);
+      const starts = {};
+      firstCourts.forEach(c => rkArr(c.players).forEach(p => { if (starts[p] === undefined) starts[p] = c.courtNumber; }));
+      return { name: (ev && (ev.name || ev.playerCode)) || 'Kisa-tapahtuma', date: rkLocalDate(ev && ev.createdAt), games, starts };
+    }
+
+    // ---------- Laskenta ----------
+    function rkDays(a, b) {
+      const t = d => Date.UTC(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10));
+      return Math.round((t(b) - t(a)) / 86400000);
+    }
+    function rkQnorm(p) {
+      const a = [-39.69683028665376, 220.9460984245205, -275.9285104469687, 138.357751867269, -30.66479806614716, 2.506628277459239];
+      const b = [-54.47609879822406, 161.5858368580409, -155.6989798598866, 66.80131188771972, -13.28068155288572];
+      const c = [-0.007784894002430293, -0.3223964580411365, -2.400758277161838, -2.549732539343734, 4.374664141464968, 2.938163982698783];
+      const d = [0.007784695709041462, 0.3224671290700398, 2.445134137142996, 3.754408661907416];
+      const pl = 0.02425;
+      if (p < pl) { const q = Math.sqrt(-2 * Math.log(p)); return (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1); }
+      if (p > 1 - pl) { const q = Math.sqrt(-2 * Math.log(1 - p)); return -(((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1); }
+      const q = p - 0.5, r = q * q;
+      return (((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5]) * q / (((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + 1);
+    }
+    function rkSigmoid(x) { return 1 / (1 + Math.exp(-x)); }
+
+    // Aloituskentistä lähtöarvot kuten Kisan startLevelMap (seedByCourt): kentän pelaajille kentän keskiarvo
+    function rkStartPriors(starts, pids, P) {
+      const withS = pids.filter(p => starts && starts[p] != null);
+      if (withS.length < 2) return null;
+      const courts = [...new Set(withS.map(p => Number(starts[p])))].sort((a, b) => a - b);
+      const n = withS.length, q = {};
+      let i = 0;
+      courts.forEach(cn => {
+        const ps = withS.filter(p => Number(starts[p]) === cn);
+        let s = 0;
+        ps.forEach(() => { s += P.seedC * rkQnorm(1 - (i + 0.5) / n); i++; });
+        ps.forEach(p => { q[p] = s / ps.length; });
+      });
+      return q;
+    }
+
+    // MAP-sovitus koordinaatti-Newtonilla. games: [{t1, t2, y (pistesuhde), w (paino)}]
+    function rkFit(pids, prior, lam, games, K) {
+      const r = {}, byP = {};
+      pids.forEach(p => { r[p] = prior[p]; byP[p] = []; });
+      games.forEach((g, gi) => { g.t1.forEach(p => byP[p].push([gi, 1])); g.t2.forEach(p => byP[p].push([gi, -1])); });
+      const diff = g => g.t1.reduce((s, p) => s + r[p], 0) - g.t2.reduce((s, p) => s + r[p], 0);
+      for (let it = 0; it < 300; it++) {
+        let maxStep = 0;
+        for (const p of pids) {
+          let grad = -lam[p] * (r[p] - prior[p]), h = lam[p];
+          for (const [gi, s] of byP[p]) {
+            const g = games[gi], e = rkSigmoid(K * diff(g)), w = g.w ?? 1;
+            grad += s * (g.y - e) * w; h += K * e * (1 - e) * w;
+          }
+          const step = h > 0 ? grad / h : 0;
+          r[p] += step;
+          if (Math.abs(step) > maxStep) maxStep = Math.abs(step);
+        }
+        if (maxStep < 1e-9) break;
+      }
+      const info = {};
+      pids.forEach(p => {
+        let h = 0;
+        for (const [gi] of byP[p]) { const g = games[gi], e = rkSigmoid(K * diff(g)); h += K * e * (1 - e) * (g.w ?? 1); }
+        info[p] = h;
+      });
+      return { r, info };
+    }
+
+    // Sijoitus pareittaisiksi vertailuiksi: parempi sija = selvä voitto (pistesuhde 0,6, esim. 21–14), ei
+    // täysi 1/0, jotta pelkkä järjestys ei liikuta tasoa enemmän kuin vastaava määrä oikeita eriä.
+    const PLACE_Y = 0.6;
+    function rkPlacementGames(places, P) {
+      const ids = Object.keys(places || {});
+      const n = ids.length, games = [];
+      if (n < 2) return games;
+      const w = P.placeGames / (n - 1);
+      for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+        const a = Number(places[ids[i]]), b = Number(places[ids[j]]);
+        games.push({ t1: [ids[i]], t2: [ids[j]], y: a < b ? PLACE_Y : a > b ? 1 - PLACE_Y : 0.5, w });
+      }
+      return games;
+    }
+
+    function rkImportGames(imp) {
+      return rkArr(imp.games).map(g => {
+        const a = Number(g.a), b = Number(g.b);
+        return { t1: rkArr(g.t1), t2: rkArr(g.t2), y: a + b > 0 ? a / (a + b) : 0.5, w: 1 };
+      });
+    }
+    function rkImportPids(imp) {
+      const s = new Set();
+      rkArr(imp.games).forEach(g => { rkArr(g.t1).forEach(p => s.add(p)); rkArr(g.t2).forEach(p => s.add(p)); });
+      Object.keys(imp.levels || {}).forEach(p => s.add(p));
+      Object.keys(imp.places || {}).forEach(p => s.add(p));
+      return [...s];
+    }
+
+    // Yksi tuonti rankingiin. state.players muuttuu; palauttaa muutokset.
+    function rkApply(state, imp, P) {
+      const date = imp.date;
+      const pids = rkImportPids(imp);
+      const pre = {}, before = {};
+      pids.forEach(p => {
+        const st = state.players[p];
+        if (!st) return;
+        const weeks = Math.max(0, rkDays(st.last, date)) / 7;
+        pre[p] = { mu: st.mu, lambda: 1 / (1 / st.lambda + P.tau2 * weeks) };
+        before[p] = st.mu;
+      });
+      const ranked = pids.filter(p => pre[p]), fresh = pids.filter(p => !pre[p]);
+      const after = {}, lamAfter = {}, played = {}, prior0 = {};
+
+      if (imp.source === 'levels') {
+        const v = {};
+        pids.forEach(p => { v[p] = Number(imp.levels[p]); });
+        const x = {};
+        let anchored = false;
+        if (imp.scale === 'points') {
+          if (ranked.length >= 3) {
+            let sw = 0, sx = 0, sy = 0;
+            ranked.forEach(p => { const w = pre[p].lambda; sw += w; sx += w * v[p]; sy += w * pre[p].mu; });
+            const mx = sx / sw, my = sy / sw;
+            let sxx = 0, sxy = 0;
+            ranked.forEach(p => { const w = pre[p].lambda; sxx += w * (v[p] - mx) ** 2; sxy += w * (v[p] - mx) * (pre[p].mu - my); });
+            const beta = sxx > 0 ? sxy / sxx : 0;
+            if (beta > 0) { pids.forEach(p => { x[p] = my + beta * (v[p] - mx); }); anchored = true; }
+          }
+          if (!anchored) {
+            const m = pids.reduce((s, p) => s + v[p], 0) / pids.length;
+            const sd = Math.sqrt(pids.reduce((s, p) => s + (v[p] - m) ** 2, 0) / pids.length);
+            pids.forEach(p => { x[p] = sd > 0 ? P.seedC * (v[p] - m) / sd : 0; });
+          }
+        } else {
+          pids.forEach(p => { x[p] = (v[p] - 1000) / 100; });
+        }
+        if (!anchored && ranked.length) {
+          const sw = ranked.reduce((s, p) => s + pre[p].lambda, 0);
+          const c = ranked.reduce((s, p) => s + pre[p].lambda * (x[p] - pre[p].mu), 0) / sw;
+          pids.forEach(p => { x[p] -= c; });
+        }
+        const w = P.levelWeight;
+        ranked.forEach(p => {
+          const { mu, lambda } = pre[p];
+          after[p] = (lambda * mu + w * x[p]) / (lambda + w);
+          lamAfter[p] = Math.min(P.lambdaMax, lambda + w);
+        });
+        fresh.forEach(p => { after[p] = x[p]; lamAfter[p] = Math.min(P.lambdaMax, Math.max(w, P.lambdaNew)); prior0[p] = x[p]; });
+      } else {
+        if (fresh.length) {
+          const q = imp.source === 'placement' ? null : rkStartPriors(imp.starts, pids, P);
+          if (q && fresh.every(p => q[p] != null)) {
+            const rq = ranked.filter(p => q[p] != null);
+            const c = rq.length ? rq.reduce((s, p) => s + pre[p].mu - q[p], 0) / rq.length : 0;
+            fresh.forEach(p => { prior0[p] = q[p] + c; });
+          } else {
+            const m = ranked.length ? ranked.reduce((s, p) => s + pre[p].mu, 0) / ranked.length : 0;
+            fresh.forEach(p => { prior0[p] = m; });
+          }
+          fresh.forEach(p => { pre[p] = { mu: prior0[p], lambda: P.lambdaNew }; });
+        }
+        const games = imp.source === 'placement' ? rkPlacementGames(imp.places, P) : rkImportGames(imp);
+        const prior = {}, lam = {};
+        pids.forEach(p => { prior[p] = pre[p].mu; lam[p] = pre[p].lambda; });
+        const { r, info } = rkFit(pids, prior, lam, games, P.K);
+        pids.forEach(p => { after[p] = r[p]; lamAfter[p] = Math.min(P.lambdaMax, lam[p] + info[p]); });
+        if (imp.source !== 'placement') games.forEach(g => g.t1.concat(g.t2).forEach(p => { played[p] = (played[p] || 0) + 1; }));
+      }
+
+      pids.forEach(p => {
+        let st = state.players[p];
+        if (!st) st = state.players[p] = { mu: 0, lambda: P.lambdaNew, events: 0, games: 0, first: date, last: date, history: [] };
+        st.mu = after[p]; st.lambda = lamAfter[p]; st.events++; st.games += played[p] || 0;
+        if (date < st.first) st.first = date;
+        if (date > st.last) st.last = date;
+        st.history.push({ iid: imp.id, date, before: p in before ? before[p] : null, after: after[p] });
+      });
+      return { pids, before, after, prior: prior0, ranked: ranked.length, fresh: fresh.length };
+    }
+
+    function rkSortedImports(ranking) {
+      return Object.keys((ranking && ranking.imports) || {}).map(id => Object.assign({}, ranking.imports[id], { id }))
+        .filter(i => i && /^\d{4}-\d{2}-\d{2}$/.test(i.date || ''))
+        .sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : String(a.importedAt || '') < String(b.importedAt || '') ? -1 : String(a.importedAt || '') > String(b.importedAt || '') ? 1 : (a.id < b.id ? -1 : 1));
+    }
+
+    function rkCompute(ranking) {
+      const P = rkParams(ranking);
+      const imports = rkSortedImports(ranking);
+      const state = { players: {} }, results = {};
+      imports.forEach(imp => { results[imp.id] = rkApply(state, imp, P); });
+      return { P, imports, players: state.players, results };
+    }
+
+    // Taulukon rivit tason mukaan. today = 'YYYY-MM-DD'
+    function rkTableRows(comp, registry, today, opts = {}) {
+      const P = comp.P;
+      const rows = Object.keys(comp.players).filter(p => registry && registry[p]).map(p => {
+        const st = comp.players[p];
+        const lastH = st.history[st.history.length - 1];
+        const change = lastH && lastH.before !== null ? rkLabel(lastH.after) - rkLabel(lastH.before) : null;
+        return {
+          pid: p, name: registry[p].name, mu: st.mu, label: rkLabel(st.mu), lambda: st.lambda,
+          provisional: st.lambda < P.provisional, inactive: rkDays(st.last, today) > P.inactiveDays,
+          events: st.events, games: st.games, last: st.last, change, isNew: !!lastH && lastH.before === null
+        };
+      }).filter(r => opts.showInactive || !r.inactive);
+      rows.sort((a, b) => b.mu - a.mu || a.name.localeCompare(b.name, 'fi'));
+      rows.forEach((r, i) => { r.rank = i + 1; });
+      return rows;
+    }
+
+    // Pelaajan yhdistäminen: korvaa pid:n kaikissa tuonneissa. Palauttaa päivitetyt tuonnit tai virheen.
+    function rkMergeImports(imports, fromPid, toPid) {
+      const out = {};
+      for (const id of Object.keys(imports || {})) {
+        const imp = imports[id];
+        const pids = rkImportPids(imp);
+        if (!pids.includes(fromPid)) continue;
+        if (pids.includes(toPid)) return { error: `Molemmat pelaajat ovat tapahtumassa "${imp.name}", joten heitä ei voi yhdistää.` };
+        const sw = a => rkArr(a).map(p => p === fromPid ? toPid : p);
+        const swKeys = o => { if (!o) return o; const r = {}; Object.keys(o).forEach(k => { r[k === fromPid ? toPid : k] = o[k]; }); return r; };
+        const n = Object.assign({}, imp);
+        if (imp.games) n.games = rkArr(imp.games).map(g => Object.assign({}, g, { t1: sw(g.t1), t2: sw(g.t2) }));
+        ['levels', 'places', 'starts', 'names'].forEach(k => { if (imp[k]) n[k] = swKeys(imp[k]); });
+        delete n.id;
+        out[id] = n;
+      }
+      return { imports: out };
+    }
+    // ==== RANKING-LOGIC-END
+
+    // ---------- Tietokanta (sama kuin Kisassa) ----------
+    function createLocalBackend() {
+      const KEY = 'APPL_localdb';
+      const LOCAL_UID = 'local-user';
+      const listeners = new Set();
+      const BAD_KEY = /[.$#\[\]\/]/;
+      // Serialisoi luku-muokkaus-kirjoitus -kierrokset välilehtien välillä (kuten Firebasen atomiset kirjoitukset)
+      const withLock = (fn) => (typeof navigator !== 'undefined' && navigator.locks && window.isSecureContext)
+        ? navigator.locks.request('APPL_localdb_lock', async () => fn())
+        : Promise.resolve().then(fn);
+      const delay = () => LOCAL_LATENCY > 0 ? new Promise(r => setTimeout(r, LOCAL_LATENCY)) : null;
+
+      function readDb() { try { const r = localStorage.getItem(KEY); return r ? JSON.parse(r) : {}; } catch (e) { return {}; } }
+      function writeDb(db) { localStorage.setItem(KEY, JSON.stringify(db)); }
+      function parts(path) { return String(path || '').split('/').filter(Boolean); }
+      function getAt(root, p) {
+        let cur = root;
+        for (const k of p) { if (cur == null || typeof cur !== 'object') return undefined; cur = cur[k]; }
+        return cur;
+      }
+      function clean(v) {
+        if (v === undefined || v === null) return undefined;
+        if (typeof v === 'number' && !isFinite(v)) return undefined;
+        if (Array.isArray(v)) { const out = v.map(clean); return out.every(x => x === undefined) ? undefined : out; }
+        if (typeof v === 'object') {
+          const out = {}; let any = false;
+          for (const k of Object.keys(v)) {
+            if (k === '' || BAD_KEY.test(k)) throw new Error(`Firebase: virheellinen avain "${k}"`);
+            const c = clean(v[k]);
+            if (c !== undefined) { out[k] = c; any = true; }
+          }
+          return any ? out : undefined;
+        }
+        return v;
+      }
+      function setIn(node, p, val) {
+        if (p.length === 0) return val;
+        const [k, ...rest] = p;
+        const base = (node && typeof node === 'object') ? (Array.isArray(node) ? node.slice() : { ...node }) : {};
+        const child = setIn(base[k], rest, val);
+        if (child === undefined) { if (Array.isArray(base)) base[k] = undefined; else delete base[k]; }
+        else base[k] = child;
+        return clean(base);
+      }
+      function norm(v) {
+        if (v === null || typeof v !== 'object') return v;
+        if (Array.isArray(v)) return v.map(x => (x === undefined || x === null) ? null : norm(x));
+        const keys = Object.keys(v);
+        const out = {};
+        keys.forEach(k => { out[k] = norm(v[k]); });
+        if (keys.length && keys.every(k => /^(0|[1-9]\d*)$/.test(k))) {
+          const max = Math.max(...keys.map(Number));
+          if (max < keys.length * 2) {
+            const arr = [];
+            for (let i = 0; i <= max; i++) arr.push(String(i) in out ? out[String(i)] : null);
+            return arr;
+          }
+        }
+        return out;
+      }
+      function readNorm(path) {
+        const raw = getAt(readDb(), parts(path));
+        return raw === undefined ? null : norm(raw);
+      }
+      function notify() { [...listeners].forEach(l => l.check(false)); }
+
+      if (typeof window !== 'undefined' && window.addEventListener) {
+        window.addEventListener('storage', (e) => { if (e.key === KEY) notify(); });
+      }
+
+      return {
+        mode: 'local',
+        async ensureAuth() { return LOCAL_UID; },
+        async reauth() {},
+        uid() { return LOCAL_UID; },
+        async get(path) { const w = delay(); if (w) await w; return JSON.parse(JSON.stringify(readNorm(path))); },
+        async set(path, val) {
+          const w = delay(); if (w) await w;
+          return withLock(() => {
+            const nd = setIn(readDb(), parts(path), clean(val));
+            writeDb(nd || {}); notify();
+          });
+        },
+        async update(path, obj) {
+          const w = delay(); if (w) await w;
+          return withLock(() => {
+            let db = readDb();
+            for (const [k, v] of Object.entries(obj)) {
+              db = setIn(db, [...parts(path), ...parts(k)], clean(v)) || {};
+            }
+            writeDb(db); notify();
+          });
+        },
+        async remove(path) {
+          const w = delay(); if (w) await w;
+          return withLock(() => {
+            const nd = setIn(readDb(), parts(path), undefined);
+            writeDb(nd || {}); notify();
+          });
+        },
+        listen(path, cb) {
+          const l = { active: true, last: undefined };
+          l.check = (force) => {
+            if (!l.active) return;
+            const s = JSON.stringify(readNorm(path));
+            if (force || s !== l.last) {
+              l.last = s;
+              try { cb(JSON.parse(s)); } catch (e) { console.error('Kuuntelija epäonnistui', e); }
+            }
+          };
+          listeners.add(l);
+          setTimeout(() => l.check(true), 0);
+          return () => { l.active = false; listeners.delete(l); };
+        },
+        onConnection(cb) { cb(true); },
+        _reset() { localStorage.removeItem(KEY); notify(); }
+      };
+    }
+
+    function createFirebaseBackend() {
+      let M = null;
+      async function load() {
+        if (M) return M;
+        const [appM, dbM, authM] = await Promise.all([
+          import("https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js"),
+          import("https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js"),
+          import("https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js")
+        ]);
+        const app = appM.initializeApp(firebaseConfig);
+        M = { dbM, authM, db: dbM.getDatabase(app), auth: authM.getAuth(app) };
+        return M;
+      }
+      const refOf = (m, path) => path ? m.dbM.ref(m.db, path) : m.dbM.ref(m.db);
+      return {
+        mode: 'firebase',
+        async ensureAuth() {
+          const m = await load();
+          if (m.auth.currentUser) return m.auth.currentUser.uid;
+          return new Promise((resolve, reject) => {
+            let resolved = false;
+            const unsub = m.authM.onAuthStateChanged(m.auth, (user) => { if (user && !resolved) { resolved = true; unsub(); resolve(user.uid); } });
+            m.authM.signInAnonymously(m.auth).catch((error) => { if (!resolved) { resolved = true; unsub(); reject(error); } });
+          });
+        },
+        async reauth() {
+          const m = await load();
+          if (m.auth.currentUser) { try { await m.auth.currentUser.getIdToken(true); return; } catch (_) {} }
+          await m.authM.signInAnonymously(m.auth);
+        },
+        uid() { return M && M.auth.currentUser ? M.auth.currentUser.uid : null; },
+        async get(path) { const m = await load(); const s = await m.dbM.get(refOf(m, path)); return s.exists() ? s.val() : null; },
+        async set(path, val) { const m = await load(); return m.dbM.set(refOf(m, path), val); },
+        async update(path, obj) { const m = await load(); return m.dbM.update(refOf(m, path), obj); },
+        async remove(path) { const m = await load(); return m.dbM.remove(refOf(m, path)); },
+        onConnection(cb) {
+          load().then(m => m.dbM.onValue(m.dbM.ref(m.db, '.info/connected'), (s) => cb(!!s.val()))).catch(() => {});
+        },
+        listen(path, cb, errCb) {
+          let unsub = null, cancelled = false;
+          load().then(m => {
+            if (cancelled) return;
+            unsub = m.dbM.onValue(refOf(m, path), (s) => cb(s.exists() ? s.val() : null), (e) => { if (errCb) errCb(e); });
+          }).catch(e => { if (errCb) errCb(e); });
+          return () => { cancelled = true; if (unsub) unsub(); };
+        }
+      };
+    }
+
+    const backend = LOCAL_MODE ? createLocalBackend() : createFirebaseBackend();
+
+    function isPermissionError(e) {
+      const code = String((e && e.code) || '').toUpperCase(), msg = String((e && e.message) || '').toLowerCase();
+      return code.includes('PERMISSION') || msg.includes('permission_denied') || msg.includes('permission denied');
+    }
+    function withTimeout(promise, ms = OP_TIMEOUT_MS) {
+      return Promise.race([promise, new Promise((_, rej) => setTimeout(() => rej(new Error('Aikakatkaisu – yhteys ei vastaa. Tarkista verkkoyhteys ja yritä uudelleen.')), ms))]);
+    }
+    async function db(fn) {
+      await backend.ensureAuth();
+      try { return await withTimeout(Promise.resolve().then(fn)); }
+      catch (e) {
+        if (isPermissionError(e)) { try { await backend.reauth(); } catch (_) {} return await withTimeout(Promise.resolve().then(fn)); }
+        throw e;
+      }
+    }
+    function errMsg(e) { return isPermissionError(e) ? 'Ei oikeutta. Tarkista ylläpitäjäkoodi.' : ((e && e.message) || String(e)); }
+
+    // ---------- Apufunktiot ----------
+    const ICONS = {
+      back: '<path d="M15 18l-6-6 6-6"/>',
+      trophy: '<path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0V4z"/><path d="M17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3"/>',
+      history: '<path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2"/>',
+      settings: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1L7 17M17 7l2.1-2.1"/>',
+      close: '<path d="M6 6l12 12M18 6L6 18"/>',
+      plus: '<path d="M12 5v14M5 12h14"/>',
+      upload: '<path d="M12 16V4M7 9l5-5 5 5M4 20h16"/>',
+      share: '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/>',
+      users: '<circle cx="9" cy="8" r="3.5"/><path d="M2 20c0-3.5 3-6 7-6s7 2.5 7 6M17 4.5a3.5 3.5 0 0 1 0 7M22 20c0-2.5-1.5-4.5-4-5.5"/>',
+      key: '<circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M16 7l3 3"/>',
+      trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
+      copy: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/>',
+      right: '<path d="M9 18l6-6-6-6"/>',
+      edit: '<path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
+      merge: '<path d="M6 3v6a6 6 0 0 0 6 6h6M6 21v-6M15 12l3 3-3 3"/>'
+    };
+    function icon(n) { return `<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n] || ''}</svg>`; }
+    function toast(msg, type) {
+      const t = document.createElement('div');
+      t.className = 'toast' + (type === 'error' ? ' error' : '');
+      t.setAttribute('role', type === 'error' ? 'alert' : 'status');
+      t.textContent = msg;
+      const host = $('toastHost');
+      while (host.children.length >= 2) host.firstChild.remove();
+      host.appendChild(t);
+      setTimeout(() => t.remove(), type === 'error' ? 5000 : 2600);
+    }
+    function fmtDate(d) { if (!d) return ''; const [y, m, dd] = d.split('-'); return `${+dd}.${+m}.${y}`; }
+    function today() { return rkLocalDate(); }
+    function changeHtml(c) {
+      if (c === null || c === undefined) return '<span class="pill primary">uusi</span>';
+      if (c > 0) return `<span class="up">▲ ${c}</span>`;
+      if (c < 0) return `<span class="down">▼ ${-c}</span>`;
+      return '<span class="stay">±0</span>';
+    }
+    function newId(prefix) { return prefix + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+    const ID_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    function genCode() { let s = ''; for (let i = 0; i < 6; i++) s += ID_CHARS[Math.floor(Math.random() * ID_CHARS.length)]; return s; }
+    function normCode(s) { return String(s || '').trim().toUpperCase().replace(/\s+/g, ''); }
+    async function copyText(text, ok) {
+      try {
+        if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(text);
+        else { const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); }
+        toast(ok || 'Kopioitu');
+      } catch (e) { toast('Kopiointi ei onnistunut', 'error'); }
+    }
+    function linkFor(params) {
+      const q = new URLSearchParams(params);
+      if (LOCAL_MODE && URL_PARAMS.get('local') === '1') q.set('local', '1');
+      return `${location.origin}${location.pathname}?${q.toString()}`;
+    }
+
+    // Alapaneeli (modaali). Palauttaa elementin; close() sulkee.
+    let sheetStack = [];
+    function openSheet(title, bodyHtml, onMount) {
+      const wrap = document.createElement('div');
+      wrap.className = 'sheet-wrap';
+      wrap.innerHTML = `<div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(title)}"><div class="sheet-head"><h2>${esc(title)}</h2><button class="icon-btn" data-close aria-label="Sulje">${icon('close')}</button></div>${bodyHtml}</div>`;
+      const close = () => { wrap.remove(); sheetStack = sheetStack.filter(s => s !== api); };
+      const api = { el: wrap.querySelector('.sheet'), close };
+      wrap.addEventListener('click', e => { if (e.target === wrap || e.target.closest('[data-close]')) close(); });
+      $('sheetHost').appendChild(wrap);
+      sheetStack.push(api);
+      if (onMount) onMount(api);
+      return api;
+    }
+    function closeAllSheets() { [...sheetStack].forEach(s => s.close()); }
+    function askConfirm(title, text, okLabel, danger) {
+      return new Promise(resolve => {
+        let done = false;
+        const s = openSheet(title, `<p class="muted">${esc(text)}</p><div class="btn-row"><button class="btn ghost" data-no>Peruuta</button><button class="btn ${danger ? 'danger' : ''}" data-yes>${esc(okLabel || 'OK')}</button></div>`, api => {
+          api.el.querySelector('[data-no]').onclick = () => { done = true; api.close(); resolve(false); };
+          api.el.querySelector('[data-yes]').onclick = () => { done = true; api.close(); resolve(true); };
+        });
+        const obs = new MutationObserver(() => { if (!document.body.contains(s.el)) { obs.disconnect(); if (!done) resolve(false); } });
+        obs.observe($('sheetHost'), { childList: true });
+      });
+    }
+    function askText(title, label, value, okLabel) {
+      return new Promise(resolve => {
+        let done = false;
+        const s = openSheet(title, `<label class="label">${esc(label)}</label><input class="field" data-in maxlength="40" value="${esc(value || '')}"><p class="error" data-err></p><div class="btn-row"><button class="btn ghost" data-no>Peruuta</button><button class="btn" data-yes>${esc(okLabel || 'Tallenna')}</button></div>`, api => {
+          const inp = api.el.querySelector('[data-in]');
+          setTimeout(() => { inp.focus(); inp.select(); }, 30);
+          const ok = () => { const v = inp.value.trim(); const er = rkNameError(v); if (er) { api.el.querySelector('[data-err]').textContent = er; return; } done = true; api.close(); resolve(v); };
+          inp.onkeydown = e => { if (e.key === 'Enter') ok(); };
+          api.el.querySelector('[data-no]').onclick = () => { done = true; api.close(); resolve(null); };
+          api.el.querySelector('[data-yes]').onclick = ok;
+        });
+        const obs = new MutationObserver(() => { if (!document.body.contains(s.el)) { obs.disconnect(); if (!done) resolve(null); } });
+        obs.observe($('sheetHost'), { childList: true });
+      });
+    }
+
+    // ---------- Tila ----------
+    const S = { rid: null, data: null, comp: null, admin: false, adminCode: null, tab: 'table', showInactive: false, search: '', unsub: null, imp: null, loading: false };
+    const RECENT_KEY = 'RANK_recent';
+    function getRecent() { try { return JSON.parse(localStorage.getItem(RECENT_KEY) || '[]'); } catch (e) { return []; } }
+    function saveRecent(entry) {
+      try {
+        const list = getRecent().filter(r => r.id !== entry.id);
+        const old = getRecent().find(r => r.id === entry.id) || {};
+        list.unshift(Object.assign({}, old, entry, { t: Date.now() }));
+        localStorage.setItem(RECENT_KEY, JSON.stringify(list.slice(0, 12)));
+      } catch (e) {}
+    }
+    function removeRecent(id) { try { localStorage.setItem(RECENT_KEY, JSON.stringify(getRecent().filter(r => r.id !== id))); } catch (e) {} }
+
+    function registry() { return (S.data && S.data.players) || {}; }
+    function pname(pid) { const p = registry()[pid]; return p ? p.name : '?'; }
+
+    // ---------- Avaus, luonti ja ylläpitäjyys ----------
+    async function claimAdmin(rid, code) {
+      const uid = await backend.ensureAuth();
+      await db(() => backend.set(`rankingClaims/${rid}/${uid}`, code));
+      const secret = await db(() => backend.get(`rankingSecret/${rid}`));
+      if (secret !== code) throw new Error('Väärä ylläpitäjäkoodi.');
+      return true;
+    }
+
+    async function openRanking(rid, adminCode) {
+      leaveRanking(true);
+      S.rid = rid; S.data = null; S.comp = null; S.admin = false; S.adminCode = null; S.tab = 'table'; S.loading = true;
+      render();
+      const rec = getRecent().find(r => r.id === rid);
+      const code = adminCode || (rec && rec.admin) || null;
+      if (code) {
+        try { await claimAdmin(rid, code); S.admin = true; S.adminCode = code; }
+        catch (e) { if (adminCode) toast(errMsg(e), 'error'); }
+      }
+      history.replaceState({}, '', linkFor({ r: rid }).replace(location.origin, ''));
+      S.unsub = backend.listen('rankings/' + rid, (val) => {
+        if (S.rid !== rid) return;
+        S.loading = false;
+        if (!val) { toast('Rankingia ei löytynyt.', 'error'); removeRecent(rid); leaveRanking(); return; }
+        S.data = val;
+        S.comp = rkCompute(val);
+        saveRecent({ id: rid, name: val.name, admin: S.admin ? S.adminCode : (rec && rec.admin) || null });
+        render();
+      }, (e) => { toast(errMsg(e), 'error'); });
+    }
+    function leaveRanking(silent) {
+      if (S.unsub) { S.unsub(); S.unsub = null; }
+      S.rid = null; S.data = null; S.comp = null; S.admin = false; S.adminCode = null; S.imp = null;
+      closeAllSheets();
+      if (!silent) { history.replaceState({}, '', linkFor({}).replace(location.origin, '').replace(/\?$/, '')); render(); }
+    }
+
+    async function openByCode(raw) {
+      const code = normCode(raw);
+      if (!/^[A-Z0-9]{3,20}$/.test(code)) throw new Error('Tarkista koodi.');
+      const r = await db(() => backend.get('rankings/' + code + '/name'));
+      if (r !== null && r !== undefined) return openRanking(code);
+      const rid = await db(() => backend.get('rankingCodes/' + code));
+      if (rid) return openRanking(rid, code);
+      throw new Error('Koodilla ei löytynyt rankingia.');
+    }
+
+    async function createRanking(name) {
+      const uid = await backend.ensureAuth();
+      let rid = null, code = null;
+      for (let i = 0; i < 10 && !rid; i++) {
+        const c = genCode();
+        const [a, b] = await Promise.all([db(() => backend.get('rankings/' + c + '/name')), db(() => backend.get('rankingCodes/' + c))]);
+        if (a == null && b == null) rid = c;
+      }
+      for (let i = 0; i < 10 && !code; i++) {
+        const c = genCode();
+        if (c === rid) continue;
+        const [a, b] = await Promise.all([db(() => backend.get('rankings/' + c + '/name')), db(() => backend.get('rankingCodes/' + c))]);
+        if (a == null && b == null) code = c;
+      }
+      if (!rid || !code) throw new Error('Koodin luonti epäonnistui, yritä uudelleen.');
+      await db(() => backend.update('', {
+        ['rankings/' + rid]: { id: rid, name, createdAt: new Date().toISOString(), version: RANK_VERSION },
+        ['rankingSecret/' + rid]: code,
+        ['rankingCodes/' + code]: rid,
+        [`rankingClaims/${rid}/${uid}`]: code
+      }));
+      saveRecent({ id: rid, name, admin: code });
+      await openRanking(rid, code);
+    }
+
+    async function writeRanking(updates) {
+      // updates: polut suhteessa rankings/{rid}
+      await db(() => backend.update('rankings/' + S.rid, updates));
+    }
+
+    // ---------- Piirto ----------
+    function render() {
+      $('localBanner').classList.toggle('hidden', !LOCAL_MODE);
+      const main = $('main');
+      const nav = $('nav');
+      const inRanking = !!S.rid;
+      $('btnHome').innerHTML = icon(inRanking ? 'back' : 'trophy');
+      $('btnHome').setAttribute('aria-label', inRanking ? 'Kaikki rankingit' : 'Ranking');
+      if (!inRanking) {
+        $('tbName').textContent = 'Ranking';
+        $('tbSub').textContent = 'Pelaajaranking tapahtumien tuloksista';
+        nav.classList.add('hidden');
+        main.innerHTML = `<div class="view">${homeHtml()}</div>`;
+        mountHome();
+        return;
+      }
+      if (S.loading || !S.data) { main.innerHTML = '<div class="loading">Ladataan rankingia…</div>'; nav.classList.add('hidden'); return; }
+      $('tbName').textContent = S.data.name || S.rid;
+      const nPlayers = Object.keys(S.comp.players).length, nImp = S.comp.imports.length;
+      $('tbSub').textContent = `${nPlayers} pelaajaa · ${nImp} tapahtumaa${S.admin ? ' · ylläpitäjä' : ''}`;
+      if (S.imp) {
+        nav.classList.add('hidden');
+        main.innerHTML = `<div class="view">${importHtml()}</div>`;
+        mountImport();
+        return;
+      }
+      nav.classList.remove('hidden');
+      const tabs = [['table', 'trophy', 'Ranking'], ['events', 'history', 'Tapahtumat'], ['more', S.admin ? 'settings' : 'share', S.admin ? 'Hallinta' : 'Jaa']];
+      nav.innerHTML = tabs.map(([k, ic, l]) => `<button class="nav-item${S.tab === k ? ' active' : ''}" data-tab="${k}">${icon(ic)}<span>${l}</span></button>`).join('');
+      nav.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { S.tab = b.dataset.tab; render(); main.scrollTop = 0; });
+      const html = S.tab === 'events' ? eventsHtml() : S.tab === 'more' ? moreHtml() : tableHtml();
+      main.innerHTML = `<div class="view">${html}</div>`;
+      if (S.tab === 'events') mountEvents(); else if (S.tab === 'more') mountMore(); else mountTable();
+    }
+    $('btnHome').onclick = () => { if (S.rid) leaveRanking(); };
+
+    // ----- Koti -----
+    function homeHtml() {
+      const recent = getRecent();
+      return `
+        <div class="hero"><div class="logo">${icon('trophy')}</div><h1>Ranking</h1>
+          <p class="muted small">Tuo tapahtumien tulokset ja seuraa pelaajien tasoa tapahtumasta toiseen.</p></div>
+        <div class="card col">
+          <h3>Avaa ranking</h3>
+          <input id="codeIn" class="field code-input" placeholder="KOODI" autocomplete="off" autocapitalize="characters" maxlength="20">
+          <p class="tiny muted">Rankingin koodi avaa taulukon. Ylläpitäjäkoodi avaa myös tuonnin ja hallinnan.</p>
+          <p id="codeErr" class="error"></p>
+          <button id="btnOpen" class="btn">Avaa</button>
+        </div>
+        ${recent.length ? `<div class="card col"><h3>Viimeksi avatut</h3>${recent.map(r => `
+          <button class="list-btn" data-open="${esc(r.id)}"><span class="grow"><b class="ellipsis" style="display:block">${esc(r.name || r.id)}</b><span class="tiny muted">${esc(r.id)}${r.admin ? ' · ylläpitäjä' : ''}</span></span>${icon('right')}</button>`).join('')}</div>` : ''}
+        <div class="card col">
+          <h3>Luo uusi ranking</h3>
+          <input id="newName" class="field" placeholder="Esim. Maanantaivuoro" maxlength="40">
+          <p id="newErr" class="error"></p>
+          <button id="btnCreate" class="btn ghost">${icon('plus')}<span>Luo ranking</span></button>
+        </div>
+        <p class="tiny faint" style="text-align:center">Ranking ${RANK_VERSION}${LOCAL_MODE ? ' · paikallinen' : ''}</p>`;
+    }
+    function mountHome() {
+      const go = async () => {
+        $('codeErr').textContent = '';
+        $('btnOpen').disabled = true;
+        try { await openByCode($('codeIn').value); } catch (e) { $('codeErr').textContent = errMsg(e); }
+        finally { const b = $('btnOpen'); if (b) b.disabled = false; }
+      };
+      $('btnOpen').onclick = go;
+      $('codeIn').onkeydown = e => { if (e.key === 'Enter') go(); };
+      document.querySelectorAll('[data-open]').forEach(b => b.onclick = () => openRanking(b.dataset.open));
+      $('btnCreate').onclick = async () => {
+        const n = $('newName').value.trim();
+        const er = rkNameError(n);
+        if (er) { $('newErr').textContent = er.replace('Nimi', 'Rankingin nimi'); return; }
+        $('btnCreate').disabled = true;
+        try { await createRanking(n); toast('Ranking luotu'); } catch (e) { $('newErr').textContent = errMsg(e); }
+        finally { const b = $('btnCreate'); if (b) b.disabled = false; }
+      };
+    }
+
+    // ----- Taulukko -----
+    function tableHtml() {
+      const comp = S.comp;
+      if (!comp.imports.length) {
+        return `<div class="empty"><div class="big-ic">${icon('trophy')}</div><h2>Ranking on tyhjä</h2>
+          <p>${S.admin ? 'Tuo ensimmäinen tapahtuma, niin pelaajat ja tasot ilmestyvät tähän.' : 'Ylläpitäjä ei ole vielä tuonut tapahtumia.'}</p>
+          ${S.admin ? `<button class="btn" id="btnFirstImport" style="max-width:320px">${icon('upload')}<span>Tuo tapahtuma</span></button>` : ''}</div>`;
+      }
+      const all = rkTableRows(comp, registry(), today(), { showInactive: true });
+      const nInactive = all.filter(r => r.inactive).length;
+      let rows = rkTableRows(comp, registry(), today(), { showInactive: S.showInactive });
+      const q = rkNorm(S.search);
+      const shown = q ? rows.filter(r => rkNorm(r.name).includes(q)) : rows;
+      return `
+        <div class="row wrap">
+          <input id="searchIn" class="field" style="flex:1;min-width:10em;min-height:40px" placeholder="Hae pelaajaa" value="${esc(S.search)}">
+          ${nInactive ? `<button class="chip${S.showInactive ? ' on' : ''}" id="btnInactive">Passiiviset (${nInactive})</button>` : ''}
+        </div>
+        <div class="rank-list">${shown.map(r => `
+          <button class="rank-row${r.inactive ? ' dim' : ''}" data-pid="${esc(r.pid)}">
+            <span class="rk-pos">${r.rank}</span>
+            <span><span class="rk-name">${esc(r.name)}</span>
+              <span class="rk-meta"><span>${r.events} ${r.events === 1 ? 'tapahtuma' : 'tapahtumaa'}</span><span>· ${fmtDate(r.last)}</span>
+              ${r.provisional ? '<span class="pill warn">alustava</span>' : ''}${r.inactive ? '<span class="pill">passiivinen</span>' : ''}</span></span>
+            <span class="rk-val"><b>${r.label}</b>${changeHtml(r.isNew ? null : r.change)}</span>
+          </button>`).join('') || '<p class="muted" style="padding:14px">Ei osumia.</p>'}</div>
+        <p class="tiny muted">Taso lasketaan samalla mallilla kuin Kisan tapahtumataso (1000 = keskitaso). Muutos on viimeisimmästä tapahtumasta. <b>Alustava</b> = vähän pelejä, taso voi vielä muuttua paljon. <b>Passiivinen</b> = ei pelannut ${Math.round(comp.P.inactiveDays / 30)} kuukauteen.</p>`;
+    }
+    function mountTable() {
+      const fi = $('btnFirstImport'); if (fi) fi.onclick = startImport;
+      const si = $('searchIn');
+      if (si) si.oninput = () => { S.search = si.value; const pos = si.selectionStart; render(); const n = $('searchIn'); n.focus(); n.setSelectionRange(pos, pos); };
+      const bi = $('btnInactive'); if (bi) bi.onclick = () => { S.showInactive = !S.showInactive; render(); };
+      document.querySelectorAll('.rank-row[data-pid]').forEach(b => b.onclick = () => openPlayer(b.dataset.pid));
+    }
+
+    function sparkSvg(values) {
+      if (values.length < 2) return '';
+      const W = 300, H = 80, pad = 8;
+      const mn = Math.min(...values), mx = Math.max(...values), span = Math.max(20, mx - mn);
+      const lo = (mn + mx) / 2 - span / 2;
+      const pts = values.map((v, i) => [pad + i * (W - 2 * pad) / (values.length - 1), H - pad - (v - lo) / span * (H - 2 * pad)]);
+      const d = pts.map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' ');
+      return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Tason kehitys">
+        <path d="${d}" fill="none" stroke="var(--primary)" stroke-width="2.5" vector-effect="non-scaling-stroke" stroke-linejoin="round"/>
+        ${pts.map(p => `<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="3" fill="var(--primary)"/>`).join('')}</svg>
+        <div class="row between tiny muted"><span>${fmtDate(S.comp.players[S.curPid].history[0].date)}</span><span>${Math.round(lo)}–${Math.round(lo + span)}</span><span>${fmtDate(S.comp.players[S.curPid].last)}</span></div>`;
+    }
+    function namesUsedFor(pid) {
+      const s = new Set();
+      S.comp.imports.forEach(imp => { const n = imp.names && imp.names[pid]; if (n) s.add(n); });
+      return [...s];
+    }
+    function openPlayer(pid) {
+      const st = S.comp.players[pid];
+      if (!st) return;
+      S.curPid = pid;
+      const P = S.comp.P;
+      const all = rkTableRows(S.comp, registry(), today(), { showInactive: true });
+      const row = all.find(r => r.pid === pid);
+      const impById = {}; S.comp.imports.forEach(i => { impById[i.id] = i; });
+      const hist = st.history.slice().reverse();
+      const used = namesUsedFor(pid);
+      const body = `
+        <div class="stat-grid">
+          <div class="stat"><span class="tiny muted">Taso</span><b>${rkLabel(st.mu)}</b></div>
+          <div class="stat"><span class="tiny muted">Sija</span><b>${row ? row.rank : '–'}</b></div>
+          <div class="stat"><span class="tiny muted">Tapahtumat</span><b>${st.events}</b></div>
+          <div class="stat"><span class="tiny muted">Erät</span><b>${st.games}</b></div>
+          <div class="stat"><span class="tiny muted">Varmuus</span><b>${Math.round(100 * st.lambda / P.lambdaMax)} %</b></div>
+        </div>
+        ${row && (row.provisional || row.inactive) ? `<div class="banner warn">${row.provisional ? 'Alustava taso: pelejä on vielä vähän.' : ''} ${row.inactive ? 'Passiivinen: ei pelannut ' + Math.round(P.inactiveDays / 30) + ' kuukauteen.' : ''}</div>` : ''}
+        ${sparkSvg(st.history.map(h => rkLabel(h.after)))}
+        <div class="card"><table class="tbl"><thead><tr><th>Tapahtuma</th><th class="num">Ennen</th><th class="num">Jälkeen</th><th class="num">Muutos</th></tr></thead><tbody>
+          ${hist.map(h => { const imp = impById[h.iid] || {}; const src = imp.names && imp.names[pid];
+            return `<tr><td><b>${esc(imp.name || '')}</b><div class="tiny muted">${fmtDate(h.date)} · ${esc(RANK_SOURCES[imp.source] || '')}${src && src !== pname(pid) ? ' · nimellä ' + esc(src) : ''}</div></td>
+              <td class="num">${h.before === null ? '–' : rkLabel(h.before)}</td><td class="num"><b>${rkLabel(h.after)}</b></td><td class="num">${changeHtml(h.before === null ? null : rkLabel(h.after) - rkLabel(h.before))}</td></tr>`; }).join('')}
+        </tbody></table></div>
+        ${used.length ? `<p class="tiny muted">Nimet tapahtumissa: ${used.map(esc).join(', ')}</p>` : ''}
+        ${S.admin ? `<div class="btn-row"><button class="btn ghost sm" data-rename>${icon('edit')}<span>Muokkaa nimeä</span></button><button class="btn ghost sm" data-merge>${icon('merge')}<span>Yhdistä toiseen</span></button></div>` : ''}`;
+      openSheet(pname(pid), body, api => {
+        const rn = api.el.querySelector('[data-rename]');
+        if (rn) rn.onclick = () => { api.close(); renamePlayer(pid); };
+        const mg = api.el.querySelector('[data-merge]');
+        if (mg) mg.onclick = () => { api.close(); mergePlayer(pid); };
+      });
+    }
+
+    // ----- Tapahtumat -----
+    function eventsHtml() {
+      const imps = S.comp.imports.slice().reverse();
+      return `
+        ${S.admin ? `<button class="btn" id="btnImport">${icon('upload')}<span>Tuo tapahtuma</span></button>` : ''}
+        ${imps.length ? `<div class="col">${imps.map(imp => { const res = S.comp.results[imp.id];
+          return `<button class="list-btn" data-imp="${esc(imp.id)}" style="background:var(--surface);border:1px solid var(--border)">
+            <span class="grow"><b class="ellipsis" style="display:block">${esc(imp.name)}</b>
+            <span class="tiny muted">${fmtDate(imp.date)} · ${res.pids.length} pelaajaa${res.fresh ? ` · ${res.fresh} uutta` : ''}</span></span>
+            <span class="pill">${esc(RANK_SOURCES[imp.source] || imp.source)}</span>${icon('right')}</button>`; }).join('')}</div>`
+          : `<div class="empty"><div class="big-ic">${icon('history')}</div><h2>Ei tapahtumia</h2><p>Tuodut tapahtumat näkyvät tässä uusin ensin.</p></div>`}`;
+    }
+    function mountEvents() {
+      const b = $('btnImport'); if (b) b.onclick = startImport;
+      document.querySelectorAll('[data-imp]').forEach(x => x.onclick = () => openImportSheet(x.dataset.imp));
+    }
+    function openImportSheet(iid) {
+      const imp = S.comp.imports.find(i => i.id === iid);
+      const res = S.comp.results[iid];
+      if (!imp || !res) return;
+      const rows = res.pids.map(p => ({ p, b: res.before[p], a: res.after[p] })).sort((x, y) => y.a - x.a);
+      const body = `
+        <p class="muted small">${fmtDate(imp.date)} · ${esc(RANK_SOURCES[imp.source] || imp.source)}${imp.sourceRef ? ' · koodi ' + esc(imp.sourceRef) : ''} · ${res.pids.length} pelaajaa, joista ${res.ranked} rankattuja ennen tapahtumaa</p>
+        <div class="card"><table class="tbl"><thead><tr><th>Pelaaja</th><th class="num">Ennen</th><th class="num">Jälkeen</th><th class="num">Muutos</th></tr></thead><tbody>
+        ${rows.map(r => { const src = imp.names && imp.names[r.p];
+          return `<tr><td><b>${esc(pname(r.p))}</b>${src && src !== pname(r.p) ? `<div class="tiny muted">${esc(src)}</div>` : ''}</td>
+            <td class="num">${r.b === undefined ? '–' : rkLabel(r.b)}</td><td class="num"><b>${rkLabel(r.a)}</b></td><td class="num">${changeHtml(r.b === undefined ? null : rkLabel(r.a) - rkLabel(r.b))}</td></tr>`; }).join('')}
+        </tbody></table></div>
+        <p class="tiny muted">Muutokset on laskettu tapahtuman päivän tilanteesta. Jos aiempia tapahtumia tuodaan myöhemmin, luvut päivittyvät.</p>
+        ${S.admin ? `<button class="btn danger-ghost" data-del>${icon('trash')}<span>Poista tuonti</span></button>` : ''}`;
+      openSheet(imp.name, body, api => {
+        const d = api.el.querySelector('[data-del]');
+        if (d) d.onclick = async () => {
+          if (!(await askConfirm('Poista tuonti', `Poistetaanko "${imp.name}" rankingista? Ranking lasketaan uudelleen ilman sitä. Pelaajat, joilla ei ole muita tapahtumia, poistetaan.`, 'Poista', true))) return;
+          try { await deleteImport(iid); api.close(); toast('Tuonti poistettu'); } catch (e) { toast(errMsg(e), 'error'); }
+        };
+      });
+    }
+    async function deleteImport(iid) {
+      const imps = S.data.imports || {};
+      const imp = imps[iid];
+      const pids = rkImportPids(imp);
+      const updates = { ['imports/' + iid]: null };
+      const stillUsed = new Set();
+      Object.keys(imps).forEach(id => { if (id !== iid) rkImportPids(imps[id]).forEach(p => stillUsed.add(p)); });
+      const gone = pids.filter(p => !stillUsed.has(p));
+      gone.forEach(p => { updates['players/' + p] = null; });
+      Object.entries(S.data.aliases || {}).forEach(([k, v]) => { if (gone.includes(v)) updates['aliases/' + k] = null; });
+      await writeRanking(updates);
+    }
+
+    // ----- Hallinta / Jaa -----
+    function moreHtml() {
+      const viewLink = linkFor({ r: S.rid });
+      const share = `<div class="card col"><h3>Jaa ranking</h3>
+          <p class="small muted">Linkki näyttää taulukon ja tapahtumat. Rankingin koodi: <b>${esc(S.rid)}</b></p>
+          <div class="btn-row"><button class="btn ghost sm" id="btnCopyView">${icon('copy')}<span>Kopioi linkki</span></button><button class="btn ghost sm" id="btnQr">${icon('share')}<span>QR-koodi</span></button></div></div>`;
+      if (!S.admin) {
+        return `${share}<div class="card col"><h3>Ylläpitäjä</h3><p class="small muted">Ylläpitäjäkoodilla voit tuoda tapahtumia ja hallita pelaajia.</p>
+          <input id="admIn" class="field code-input" placeholder="KOODI" maxlength="20"><p id="admErr" class="error"></p><button class="btn" id="btnAdm">${icon('key')}<span>Kirjaudu ylläpitäjäksi</span></button></div>
+          <p class="tiny faint" style="text-align:center">Ranking ${RANK_VERSION}</p>`;
+      }
+      const nReg = Object.keys(registry()).length;
+      const P = S.comp.P;
+      return `
+        <button class="btn" id="btnImport">${icon('upload')}<span>Tuo tapahtuma</span></button>
+        ${share}
+        <div class="card col"><h3>Ylläpitäjäkoodi</h3>
+          <p class="small muted">Koodi <b style="letter-spacing:.15em">${esc(S.adminCode || '')}</b> antaa oikeuden tuoda ja poistaa tapahtumia. Jaa se vain toisille ylläpitäjille.</p>
+          <button class="btn ghost sm" id="btnCopyAdmin">${icon('copy')}<span>Kopioi ylläpitäjälinkki</span></button></div>
+        <div class="card col"><h3>Pelaajat</h3><p class="small muted">${nReg} pelaajaa. Voit muokata nimiä ja yhdistää saman henkilön kaksi pelaajaa.</p>
+          <button class="btn ghost sm" id="btnPlayers">${icon('users')}<span>Hallitse pelaajia</span></button></div>
+        <div class="card col"><h3>Asetukset</h3>
+          <button class="btn ghost sm" id="btnRenameRanking">${icon('edit')}<span>Muuta rankingin nimeä</span></button>
+          <p class="tiny muted">Laskennan parametrit: tauon vaikutus ${P.tau2}/vko, varmuuden katto ${P.lambdaMax}, uuden pelaajan varmuus ${P.lambdaNew}, passiivisuusraja ${P.inactiveDays} pv.</p></div>
+        <button class="btn danger-ghost" id="btnDeleteRanking">${icon('trash')}<span>Poista ranking</span></button>
+        <p class="tiny faint" style="text-align:center">Ranking ${RANK_VERSION}${LOCAL_MODE ? ' · paikallinen' : ''}</p>`;
+    }
+    function mountMore() {
+      const viewLink = linkFor({ r: S.rid });
+      $('btnCopyView').onclick = () => copyText(viewLink, 'Linkki kopioitu');
+      $('btnQr').onclick = () => {
+        let svg = '';
+        try { const q = window.qrcode(0, 'M'); q.addData(viewLink); q.make(); svg = q.createSvgTag({ cellSize: 6, margin: 2, scalable: true }); } catch (e) { svg = '<p class="muted">QR-koodia ei voitu luoda.</p>'; }
+        openSheet(S.data.name, `<div class="qr" style="display:flex;justify-content:center">${svg}</div><p class="small muted" style="text-align:center;overflow-wrap:anywhere">${esc(viewLink)}</p>`);
+      };
+      const adm = $('btnAdm');
+      if (adm) {
+        const go = async () => {
+          const code = normCode($('admIn').value);
+          $('admErr').textContent = '';
+          try {
+            const rid = await db(() => backend.get('rankingCodes/' + code));
+            if (rid !== S.rid) throw new Error('Väärä ylläpitäjäkoodi.');
+            await claimAdmin(S.rid, code);
+            S.admin = true; S.adminCode = code; saveRecent({ id: S.rid, name: S.data.name, admin: code });
+            toast('Olet nyt ylläpitäjä'); render();
+          } catch (e) { $('admErr').textContent = errMsg(e); }
+        };
+        adm.onclick = go; $('admIn').onkeydown = e => { if (e.key === 'Enter') go(); };
+        return;
+      }
+      $('btnImport').onclick = startImport;
+      $('btnCopyAdmin').onclick = () => copyText(linkFor({ admin: S.adminCode }), 'Ylläpitäjälinkki kopioitu');
+      $('btnPlayers').onclick = openPlayersSheet;
+      $('btnRenameRanking').onclick = async () => {
+        const v = await askText('Rankingin nimi', 'Nimi', S.data.name);
+        if (v) { try { await writeRanking({ name: v }); toast('Nimi vaihdettu'); } catch (e) { toast(errMsg(e), 'error'); } }
+      };
+      $('btnDeleteRanking').onclick = async () => {
+        if (!(await askConfirm('Poista ranking', `Poistetaanko "${S.data.name}" ja kaikki sen tuonnit pysyvästi? Tätä ei voi perua. Kisan tapahtumiin tämä ei vaikuta.`, 'Poista pysyvästi', true))) return;
+        try {
+          const uid = await backend.ensureAuth(), rid = S.rid, code = S.adminCode;
+          await db(() => backend.update('', { ['rankings/' + rid]: null, ['rankingSecret/' + rid]: null, ['rankingCodes/' + code]: null, [`rankingClaims/${rid}/${uid}`]: null }));
+          removeRecent(rid); leaveRanking(); toast('Ranking poistettu');
+        } catch (e) { toast(errMsg(e), 'error'); }
+      };
+    }
+
+    function openPlayersSheet() {
+      const reg = registry();
+      const ids = Object.keys(reg).sort((a, b) => reg[a].name.localeCompare(reg[b].name, 'fi'));
+      const body = `<div class="col">${ids.map(p => { const st = S.comp.players[p]; const used = namesUsedFor(p).filter(n => n !== reg[p].name);
+        return `<div class="list-btn" style="cursor:default"><span class="grow"><b>${esc(reg[p].name)}</b><span class="tiny muted" style="display:block">${st ? rkLabel(st.mu) + ' · ' + st.events + ' tap.' : 'ei tapahtumia'}${used.length ? ' · myös ' + used.map(esc).join(', ') : ''}</span></span>
+          <button class="icon-btn" data-ren="${esc(p)}" aria-label="Muokkaa nimeä">${icon('edit')}</button><button class="icon-btn" data-mer="${esc(p)}" aria-label="Yhdistä">${icon('merge')}</button></div>`; }).join('')}</div>`;
+      openSheet('Pelaajat', body, api => {
+        api.el.querySelectorAll('[data-ren]').forEach(b => b.onclick = () => { api.close(); renamePlayer(b.dataset.ren); });
+        api.el.querySelectorAll('[data-mer]').forEach(b => b.onclick = () => { api.close(); mergePlayer(b.dataset.mer); });
+      });
+    }
+    async function renamePlayer(pid) {
+      const v = await askText('Muokkaa nimeä', 'Nimi rankingissa', pname(pid));
+      if (!v || v === pname(pid)) return;
+      const clash = Object.keys(registry()).find(p => p !== pid && rkNorm(registry()[p].name) === rkNorm(v));
+      if (clash) { toast('Samanniminen pelaaja on jo rankingissa. Käytä yhdistämistä.', 'error'); return; }
+      try { await writeRanking({ ['players/' + pid + '/name']: v }); toast('Nimi vaihdettu'); } catch (e) { toast(errMsg(e), 'error'); }
+    }
+    function mergePlayer(fromPid) {
+      const reg = registry();
+      const others = Object.keys(reg).filter(p => p !== fromPid).sort((a, b) => reg[a].name.localeCompare(reg[b].name, 'fi'));
+      const body = `<p class="small muted">Yhdistä <b>${esc(reg[fromPid].name)}</b> toiseen pelaajaan, jos he ovat sama henkilö. Kaikki tapahtumat siirtyvät valitulle pelaajalle ja ranking lasketaan uudelleen.</p>
+        <select class="field" data-to><option value="">Valitse pelaaja…</option>${others.map(p => `<option value="${esc(p)}">${esc(reg[p].name)}</option>`).join('')}</select>
+        <p class="error" data-err></p><div class="btn-row"><button class="btn ghost" data-close>Peruuta</button><button class="btn" data-ok>Yhdistä</button></div>`;
+      openSheet('Yhdistä pelaajat', body, api => {
+        api.el.querySelector('[data-ok]').onclick = async () => {
+          const to = api.el.querySelector('[data-to]').value;
+          const err = api.el.querySelector('[data-err]');
+          if (!to) { err.textContent = 'Valitse pelaaja.'; return; }
+          const m = rkMergeImports(S.data.imports || {}, fromPid, to);
+          if (m.error) { err.textContent = m.error; return; }
+          const updates = { ['players/' + fromPid]: null };
+          Object.entries(m.imports).forEach(([id, imp]) => { updates['imports/' + id] = imp; });
+          Object.entries(S.data.aliases || {}).forEach(([k, v]) => { if (v === fromPid) updates['aliases/' + k] = to; });
+          updates['aliases/' + rkAliasKey(reg[fromPid].name)] = to;
+          try { await writeRanking(updates); api.close(); toast('Pelaajat yhdistetty'); } catch (e) { err.textContent = errMsg(e); }
+        };
+      });
+    }
+
+    // ----- Tuonti -----
+    const SAMPLES = {
+      games: '# Pelaaja 1; Pelaaja 2; Pelaaja 3; Pelaaja 4; pisteet 1+2; pisteet 3+4\nJukkaH; Anna; Mikko; Liisa; 21; 15\nJukkaH; Mikko; Anna; Liisa; 18; 21\n# Kaksinpeli: Pelaaja 1; Pelaaja 2; 21-17',
+      levels: '# Nimi; taso\nJukkaH; 1124\nAnna; 1061\nMikko; 987',
+      placement: '# Yksi nimi per rivi järjestyksessä, tai "sija; nimi"\nAnna\nJukkaH\nMikko'
+    };
+    function startImport() {
+      S.imp = { step: 1, source: 'kisa', code: '', text: '', scale: 'kisa', err: '' };
+      render();
+      $('main').scrollTop = 0;
+    }
+    function importHtml() {
+      const I = S.imp;
+      const steps = `<div class="steps">${[1, 2, 3].map(n => `<i class="${n <= I.step ? 'on' : ''}"></i>`).join('')}</div>`;
+      if (I.step === 1) {
+        const src = I.source;
+        return `${steps}<h2>Tuo tapahtuma</h2>
+          <div class="seg">${Object.entries(RANK_SOURCES).map(([k, l]) => `<button data-src="${k}" class="${src === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+          <div class="card col">
+          ${src === 'kisa' ? `<label class="label" for="kisaCode">Kisa-tapahtuman pelaajakoodi</label>
+            <input id="kisaCode" class="field code-input" maxlength="20" placeholder="KOODI" value="${esc(I.code)}">
+            <p class="tiny muted">Kaikki tapahtuman erät, parit ja aloituskentät tuodaan. Tapahtuman voi tuoda kesken tai lopuksi; samaa tapahtumaa ei voi tuoda kahdesti.</p>`
+          : `${src === 'games' ? '<p class="small muted">Yksi erä per rivi: neljä nimeä (1+2 vastaan 3+4) ja pisteet, tai kaksinpelissä kaksi nimeä ja pisteet. Erottimeksi käy puolipiste, sarkain tai pilkku.</p>'
+            : src === 'levels' ? `<p class="small muted">Yksi pelaaja per rivi: nimi ja tapahtuman lopputaso tai pisteet. Luvut siirretään ranking-asteikolle tapahtuman rankattujen pelaajien avulla.</p>
+              <div class="seg"><button data-scale="kisa" class="${I.scale === 'kisa' ? 'on' : ''}">Kisan taso (1000 = keskitaso)</button><button data-scale="points" class="${I.scale === 'points' ? 'on' : ''}">Muut pisteet</button></div>`
+            : '<p class="small muted">Loppusijoitus parhaasta alkaen. Pelkkä sijoitus kertoo vähemmän kuin erätulokset, joten se liikuttaa rankingia varovaisemmin.</p>'}
+            <textarea id="impText" class="field" spellcheck="false" placeholder="${esc(SAMPLES[src])}">${esc(I.text)}</textarea>
+            <label class="btn ghost sm" style="align-self:flex-start">${icon('upload')}<span>Lue tiedostosta</span><input id="impFile" type="file" accept=".csv,.txt,.tsv,text/plain,text/csv" class="hidden"></label>`}
+          <p id="impErr" class="error">${esc(I.err || '')}</p>
+          </div>
+          <div class="btn-row"><button class="btn ghost" id="btnCancel">Peruuta</button><button class="btn" id="btnNext">Jatka</button></div>`;
+      }
+      if (I.step === 2) {
+        const reg = registry();
+        const all = Object.keys(reg).sort((a, b) => reg[a].name.localeCompare(reg[b].name, 'fi'));
+        const nKnown = I.srcNames.filter(n => I.map[n].pid !== '__new').length;
+        const howLabel = { alias: ['Aiempi kohdistus', 'win'], exact: ['Sama nimi', 'win'], fuzzy: ['Ehdotus – tarkista', 'warn'], ambiguous: ['Useita vaihtoehtoja', 'warn'] };
+        return `${steps}<h2>Kohdista nimet</h2>
+          <div class="card col">
+            <div class="row wrap"><div style="flex:2;min-width:12em"><label class="label" for="impName">Tapahtuma</label><input id="impName" class="field" maxlength="60" placeholder="Tapahtuma ${esc(fmtDate(I.date))}" value="${esc(I.name)}"></div>
+            <div style="flex:1;min-width:10em"><label class="label" for="impDate">Päivä</label><input id="impDate" class="field" type="date" value="${esc(I.date)}"></div></div>
+          </div>
+          <p class="small muted">${I.srcNames.length} nimeä: ${nKnown} kohdistettu rankingin pelaajiin, ${I.srcNames.length - nKnown} uutta. Valitse jokaiselle nimelle oikea pelaaja tai lisää uusi. Valinta muistetaan seuraavaa tuontia varten.</p>
+          <div class="card">${I.srcNames.map((n, i) => { const m = I.map[n]; const hl = howLabel[m.how];
+            const cand = (m.candidates || []).filter(p => reg[p]);
+            return `<div class="map-row"><div class="map-src"><b>${esc(n)}</b> ${m.pid === '__new' ? '<span class="pill primary">Uusi</span>' : hl ? `<span class="pill ${hl[1]}">${hl[0]}</span>` : ''}</div>
+              <select class="field" data-map="${i}" aria-label="Pelaaja nimelle ${esc(n)}">
+                <option value="__new"${m.pid === '__new' ? ' selected' : ''}>+ Uusi pelaaja</option>
+                ${cand.length ? `<optgroup label="Ehdotukset">${cand.map(p => `<option value="${esc(p)}"${m.pid === p ? ' selected' : ''}>${esc(reg[p].name)}</option>`).join('')}</optgroup>` : ''}
+                <optgroup label="Kaikki pelaajat">${all.filter(p => !cand.includes(p)).map(p => `<option value="${esc(p)}"${m.pid === p ? ' selected' : ''}>${esc(reg[p].name)}</option>`).join('')}</optgroup>
+              </select>
+              ${m.pid === '__new' ? `<input class="field map-new" data-new="${i}" maxlength="40" value="${esc(m.newName)}" placeholder="Nimi rankingissa, esim. Jukka Holopainen" aria-label="Uuden pelaajan nimi">` : ''}</div>`; }).join('')}</div>
+          <p id="impErr" class="error">${esc(I.err || '')}</p>
+          <div class="btn-row"><button class="btn ghost" id="btnBack">Takaisin</button><button class="btn" id="btnNext">Esikatsele</button></div>`;
+      }
+      // Vaihe 3: esikatselu
+      const pv = I.preview;
+      const latest = S.comp.imports.length ? S.comp.imports[S.comp.imports.length - 1].date : null;
+      const hasRanked = Object.keys(S.comp.players).length > 0;
+      return `${steps}<h2>Esikatselu</h2>
+        <p class="small muted"><b>${esc(I.built.imp.name)}</b> · ${fmtDate(I.date)} · ${pv.rows.length} pelaajaa, joista ${pv.res.ranked} rankattuja ja ${pv.res.fresh} uutta${pv.games ? ` · ${pv.games} erää` : ''}</p>
+        ${hasRanked && pv.res.ranked === 0 ? '<div class="banner warn">Tapahtumassa ei ole yhtään rankattua pelaajaa, joten sitä ei voi suhteuttaa muihin. Uusien pelaajien tasot ovat suhteessa vain tämän tapahtuman pelaajiin. Harkitse erillistä rankingia.</div>' : ''}
+        ${pv.res.ranked === 1 ? '<div class="banner warn">Tapahtumassa on vain yksi rankattu pelaaja, joten uusien pelaajien suhteutus on epävarma.</div>' : ''}
+        ${latest && I.date < latest ? '<div class="banner info">Tapahtuma on vanhempi kuin uusin tuonti. Ranking lasketaan uudelleen päivämääräjärjestyksessä, joten myöhempien tapahtumien muutokset voivat päivittyä.</div>' : ''}
+        <div class="card"><table class="tbl"><thead><tr><th>Pelaaja</th><th class="num">Ennen</th><th class="num">Jälkeen</th><th class="num">Muutos</th></tr></thead><tbody>
+          ${pv.rows.map(r => `<tr><td><b>${esc(r.name)}</b>${r.src !== r.name ? `<div class="tiny muted">${esc(r.src)}</div>` : ''}</td><td class="num">${r.before === undefined ? '–' : rkLabel(r.before)}</td><td class="num"><b>${rkLabel(r.after)}</b></td><td class="num">${changeHtml(r.before === undefined ? null : rkLabel(r.after) - rkLabel(r.before))}</td></tr>`).join('')}
+        </tbody></table></div>
+        <p id="impErr" class="error">${esc(I.err || '')}</p>
+        <div class="btn-row"><button class="btn ghost" id="btnBack">Takaisin</button><button class="btn" id="btnSave">Tallenna rankingiin</button></div>`;
+    }
+
+    function mountImport() {
+      const I = S.imp;
+      const cancel = $('btnCancel'); if (cancel) cancel.onclick = () => { S.imp = null; render(); };
+      const back = $('btnBack'); if (back) back.onclick = () => { readStep2Inputs(); I.step--; I.err = ''; render(); };
+      if (I.step === 1) {
+        document.querySelectorAll('[data-src]').forEach(b => b.onclick = () => { readStep1Inputs(); I.source = b.dataset.src; I.err = ''; render(); });
+        document.querySelectorAll('[data-scale]').forEach(b => b.onclick = () => { readStep1Inputs(); I.scale = b.dataset.scale; render(); });
+        const f = $('impFile');
+        if (f) f.onchange = () => { const file = f.files[0]; if (!file) return; const rd = new FileReader(); rd.onload = () => { I.text = String(rd.result || ''); render(); }; rd.readAsText(file); };
+        $('btnNext').onclick = async () => {
+          readStep1Inputs();
+          $('btnNext').disabled = true;
+          try { await parseStep1(); I.step = 2; I.err = ''; } catch (e) { I.err = errMsg(e); }
+          render();
+        };
+        const kc = $('kisaCode'); if (kc) kc.onkeydown = e => { if (e.key === 'Enter') $('btnNext').click(); };
+      } else if (I.step === 2) {
+        document.querySelectorAll('[data-map]').forEach(sel => sel.onchange = () => {
+          readStep2Inputs();
+          const n = I.srcNames[+sel.dataset.map];
+          I.map[n].pid = sel.value;
+          render();
+        });
+        $('btnNext').onclick = () => {
+          readStep2Inputs();
+          try { buildPreview(); I.step = 3; I.err = ''; } catch (e) { I.err = errMsg(e); }
+          render(); $('main').scrollTop = 0;
+        };
+      } else {
+        $('btnSave').onclick = async () => {
+          $('btnSave').disabled = true;
+          try { await saveImport(); S.imp = null; S.tab = 'table'; toast('Tapahtuma tuotu rankingiin'); }
+          catch (e) { I.err = errMsg(e); }
+          render();
+        };
+      }
+    }
+    function readStep1Inputs() {
+      const I = S.imp;
+      const kc = $('kisaCode'); if (kc) I.code = normCode(kc.value);
+      const tx = $('impText'); if (tx) I.text = tx.value;
+    }
+    function readStep2Inputs() {
+      const I = S.imp;
+      const nm = $('impName'); if (nm) I.name = nm.value.trim();
+      const dt = $('impDate'); if (dt) I.date = dt.value;
+      document.querySelectorAll('[data-new]').forEach(inp => { I.map[I.srcNames[+inp.dataset.new]].newName = inp.value.trim(); });
+    }
+
+    async function parseStep1() {
+      const I = S.imp;
+      let names = [];
+      I.games = null; I.levels = null; I.places = null; I.starts = null;
+      if (I.source === 'kisa') {
+        if (!/^[A-Z0-9]{3,20}$/.test(I.code)) throw new Error('Anna Kisa-tapahtuman pelaajakoodi.');
+        const dup = S.comp.imports.find(i => i.source === 'kisa' && i.sourceRef === I.code);
+        if (dup) throw new Error(`Tämä tapahtuma on jo tuotu ("${dup.name}", ${fmtDate(dup.date)}). Poista vanha tuonti ensin, jos haluat tuoda sen uudelleen.`);
+        const ev = await db(() => backend.get('events/' + I.code));
+        if (!ev) throw new Error('Koodilla ei löytynyt Kisa-tapahtumaa. Käytä pelaajakoodia (ei järjestäjäkoodia).');
+        const k = rkFromKisaEvent(ev);
+        if (!k.games.length) throw new Error('Tapahtumassa ei ole vielä tuloksia.');
+        I.games = k.games; I.starts = k.starts;
+        if (!I.name) I.name = k.name;
+        if (!I.date) I.date = k.date;
+        k.games.forEach(g => g.t1.concat(g.t2).forEach(n => { if (!names.includes(n)) names.push(n); }));
+      } else if (I.source === 'games') {
+        const r = rkParseGames(I.text);
+        if (r.errors.length) throw new Error(r.errors.slice(0, 5).join('\n'));
+        if (!r.games.length) throw new Error('Liitä erätulokset tekstikenttään.');
+        I.games = r.games;
+        r.games.forEach(g => g.t1.concat(g.t2).forEach(n => { if (!names.some(x => rkNorm(x) === rkNorm(n))) names.push(n); }));
+        // Sama nimi eri kirjoitusasulla samassa tuonnissa = sama pelaaja
+        const canon = {}; names.forEach(n => { canon[rkNorm(n)] = n; });
+        I.games = r.games.map(g => ({ t1: g.t1.map(n => canon[rkNorm(n)]), t2: g.t2.map(n => canon[rkNorm(n)]), a: g.a, b: g.b }));
+      } else if (I.source === 'levels') {
+        const r = rkParseLevels(I.text);
+        if (r.errors.length) throw new Error(r.errors.slice(0, 5).join('\n'));
+        if (r.levels.length < 2) throw new Error('Tarvitaan vähintään kaksi pelaajaa.');
+        I.levels = {}; r.levels.forEach(l => { I.levels[l.name] = l.value; names.push(l.name); });
+      } else {
+        const r = rkParsePlacement(I.text);
+        if (r.errors.length) throw new Error(r.errors.slice(0, 5).join('\n'));
+        if (r.places.length < 2) throw new Error('Tarvitaan vähintään kaksi pelaajaa.');
+        I.places = {}; r.places.forEach(p => { I.places[p.name] = p.place; names.push(p.name); });
+      }
+      const bad = names.map(rkNameError).find(Boolean);
+      if (bad) throw new Error(bad);
+      if (!I.date) I.date = today();
+      const reg = registry(), aliases = (S.data && S.data.aliases) || {};
+      const oldMap = I.map || {};
+      I.srcNames = names;
+      I.map = {};
+      names.forEach(n => {
+        const sug = rkSuggest(n, reg, aliases);
+        I.map[n] = oldMap[n] || { pid: sug.pid || '__new', newName: n, how: sug.how, candidates: sug.candidates };
+      });
+      I.newIds = I.newIds || {};
+    }
+
+    function buildImport() {
+      const I = S.imp;
+      const reg = registry();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(I.date || '')) throw new Error('Anna tapahtuman päivä.');
+      const used = {}, newNames = {};
+      for (const n of I.srcNames) {
+        const m = I.map[n];
+        if (m.pid === '__new') {
+          const er = rkNameError(m.newName); if (er) throw new Error(er);
+          const key = rkNorm(m.newName);
+          const clash = Object.keys(reg).find(p => rkNorm(reg[p].name) === key);
+          if (clash) throw new Error(`"${m.newName}" on jo rankingissa. Valitse hänet listasta nimelle "${n}".`);
+          if (newNames[key]) throw new Error(`Uusi nimi "${m.newName}" on annettu kahdelle eri nimelle (${newNames[key]} ja ${n}).`);
+          newNames[key] = n;
+          if (!I.newIds[n]) I.newIds[n] = newId('p');
+        } else {
+          if (!reg[m.pid]) throw new Error(`Valitse pelaaja nimelle "${n}".`);
+          if (used[m.pid]) throw new Error(`${reg[m.pid].name} on valittu kahdelle nimelle: ${used[m.pid]} ja ${n}.`);
+          used[m.pid] = n;
+        }
+      }
+      const pidOf = n => I.map[n].pid === '__new' ? I.newIds[n] : I.map[n].pid;
+      const imp = { name: (I.name || `Tapahtuma ${fmtDate(I.date)}`).slice(0, 60), date: I.date, source: I.source, importedAt: new Date().toISOString(), names: {} };
+      I.srcNames.forEach(n => { imp.names[pidOf(n)] = n; });
+      if (I.games) imp.games = I.games.map(g => ({ t1: g.t1.map(pidOf), t2: g.t2.map(pidOf), a: g.a, b: g.b }));
+      if (I.source === 'kisa') {
+        imp.sourceRef = I.code;
+        imp.starts = {};
+        Object.keys(I.starts || {}).forEach(n => { if (I.map[n]) imp.starts[pidOf(n)] = I.starts[n]; });
+      }
+      if (I.levels) { imp.levels = {}; Object.keys(I.levels).forEach(n => { imp.levels[pidOf(n)] = I.levels[n]; }); imp.scale = I.scale; }
+      if (I.places) { imp.places = {}; Object.keys(I.places).forEach(n => { imp.places[pidOf(n)] = I.places[n]; }); }
+      const newPlayers = {};
+      I.srcNames.forEach(n => { if (I.map[n].pid === '__new') newPlayers[I.newIds[n]] = { name: I.map[n].newName, createdAt: new Date().toISOString() }; });
+      return { imp, newPlayers, pidOf };
+    }
+    function buildPreview() {
+      const I = S.imp;
+      const { imp, newPlayers, pidOf } = buildImport();
+      const tmpId = '__preview';
+      const temp = Object.assign({}, S.data, { players: Object.assign({}, registry(), newPlayers), imports: Object.assign({}, S.data.imports || {}, { [tmpId]: imp }) });
+      const comp = rkCompute(temp);
+      const res = comp.results[tmpId];
+      const rows = I.srcNames.map(n => { const p = pidOf(n); return { src: n, name: temp.players[p].name, before: res.before[p], after: res.after[p] }; }).sort((a, b) => b.after - a.after);
+      I.preview = { res, rows, games: imp.games ? imp.games.length : 0 };
+      I.built = { imp, newPlayers, pidOf };
+    }
+    async function saveImport() {
+      const I = S.imp;
+      const { imp, newPlayers, pidOf } = buildImport();
+      if (I.source === 'kisa' && S.comp.imports.some(i => i.source === 'kisa' && i.sourceRef === I.code)) throw new Error('Tämä tapahtuma on jo tuotu.');
+      const iid = newId('i');
+      const updates = { ['imports/' + iid]: imp };
+      Object.entries(newPlayers).forEach(([p, v]) => { updates['players/' + p] = v; });
+      I.srcNames.forEach(n => { updates['aliases/' + rkAliasKey(n)] = pidOf(n); });
+      await writeRanking(updates);
+    }
+
+    // ---------- Käynnistys ----------
+    backend.onConnection(ok => { const c = $('connBadge'); c.classList.toggle('off', !ok); c.setAttribute('aria-label', ok ? 'Yhteys kunnossa' : 'Ei yhteyttä'); });
+    (async function init() {
+      try { await backend.ensureAuth(); } catch (e) { toast('Kirjautuminen epäonnistui: ' + errMsg(e), 'error'); }
+      const adminCode = normCode(URL_PARAMS.get('admin'));
+      const rid = normCode(URL_PARAMS.get('r'));
+      if (adminCode) {
+        try { const r = await db(() => backend.get('rankingCodes/' + adminCode)); if (!r) throw new Error('Ylläpitäjäkoodilla ei löytynyt rankingia.'); await openRanking(r, adminCode); return; }
+        catch (e) { toast(errMsg(e), 'error'); }
+      }
+      if (rid) { await openRanking(rid); return; }
+      render();
+    })();
+  </script>
+</body>
+</html>
