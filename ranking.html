@@ -1,7 +1,9 @@
 <!DOCTYPE html>
 <!--
   Ranking – pysyvä pelaajaranking tapahtumien tuloksista (Kisa / 3 Erää -sovelluksen rinnakkaissivu)
-  Versio: 1.0.0
+  Versio: 1.0.1
+
+  v1.0.1: Selkeämpi virheilmoitus, jos tietokannan säännöt estävät rankingin luonnin tai avauksen.
 
   Tapahtuman tulokset tuodaan rankingiin: Kisa-tapahtuma koodilla, erätulokset CSV:nä, lopputasot tai
   loppusijoitus. Jokainen tapahtuman nimi kohdistetaan rankingin pelaajaan (esim. "JukkaH" ja "Jukka" ->
@@ -229,7 +231,7 @@
       appId: "1:305285451356:web:1073e301fca718d273a099"
     };
     const $ = id => document.getElementById(id);
-    const RANK_VERSION = '1.0.0';
+    const RANK_VERSION = '1.0.1';
     const OP_TIMEOUT_MS = 12000;
     const URL_PARAMS = new URLSearchParams(window.location.search);
     const LOCAL_MODE = URL_PARAMS.get('local') === '1' ||
@@ -817,7 +819,12 @@
         throw e;
       }
     }
-    function errMsg(e) { return isPermissionError(e) ? 'Ei oikeutta. Tarkista ylläpitäjäkoodi.' : ((e && e.message) || String(e)); }
+    // Oikeusvirhe: rankingin luonnissa ja avauksessa koodia ei tarvita, joten syy on silloin tietokannan säännöissä
+    const RULES_HINT = 'Tietokanta ei salli toimintoa. Tarkista, että rankingin säännöt (database.rules.json) on julkaistu Firebase-konsolissa.';
+    function errMsg(e, ctx) {
+      if (!isPermissionError(e)) return (e && e.message) || String(e);
+      return ctx === 'rules' ? RULES_HINT : 'Ei oikeutta. Tarkista ylläpitäjäkoodi. Jos koodi on oikein, ' + RULES_HINT.charAt(0).toLowerCase() + RULES_HINT.slice(1);
+    }
 
     // ---------- Apufunktiot ----------
     const ICONS = {
@@ -960,7 +967,7 @@
         S.comp = rkCompute(val);
         saveRecent({ id: rid, name: val.name, admin: S.admin ? S.adminCode : (rec && rec.admin) || null });
         render();
-      }, (e) => { toast(errMsg(e), 'error'); });
+      }, (e) => { toast(errMsg(e, 'rules'), 'error'); });
     }
     function leaveRanking(silent) {
       if (S.unsub) { S.unsub(); S.unsub = null; }
@@ -1072,7 +1079,7 @@
       const go = async () => {
         $('codeErr').textContent = '';
         $('btnOpen').disabled = true;
-        try { await openByCode($('codeIn').value); } catch (e) { $('codeErr').textContent = errMsg(e); }
+        try { await openByCode($('codeIn').value); } catch (e) { $('codeErr').textContent = errMsg(e, 'rules'); }
         finally { const b = $('btnOpen'); if (b) b.disabled = false; }
       };
       $('btnOpen').onclick = go;
@@ -1083,7 +1090,7 @@
         const er = rkNameError(n);
         if (er) { $('newErr').textContent = er.replace('Nimi', 'Rankingin nimi'); return; }
         $('btnCreate').disabled = true;
-        try { await createRanking(n); toast('Ranking luotu'); } catch (e) { $('newErr').textContent = errMsg(e); }
+        try { await createRanking(n); toast('Ranking luotu'); } catch (e) { $('newErr').textContent = errMsg(e, 'rules'); }
         finally { const b = $('btnCreate'); if (b) b.disabled = false; }
       };
     }
